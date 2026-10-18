@@ -28,3 +28,9 @@ req = urllib.request.Request(base + cfg['connector'], b''.join(parts), {'Content
 r = json.loads(client.open(req).read())
 assert r['success'] and r['object']['file'], r
 print('PASS: image uploads through authenticated HTTP connector')
+
+closed = get('/multipic-ci-closed.php')
+closed_cfg = json.loads(html.unescape(re.findall(r'data-multipic-config="([^"]+)"', closed)[0]))
+r = post(closed_cfg['connector'], dict(action='heartbeat', token=closed_cfg['token'], HTTP_MODAUTH=closed_cfg['auth']))
+assert r['success'], r
+print('PASS: gallery capability persists when PHP session is closed before TV rendering')
