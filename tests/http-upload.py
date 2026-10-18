@@ -1,13 +1,18 @@
 """Exercise actual manager cookies, TV rendering and connector across HTTP requests."""
-import base64, html, http.cookiejar, json, re, sys, urllib.request, urllib.parse
+import html, http.cookiejar, json, re, struct, sys, urllib.request, urllib.parse, urllib.error, zlib
 base = sys.argv[1].rstrip('/')
 jar = http.cookiejar.CookieJar()
 client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+def response(req):
+    try:
+        return client.open(req).read()
+    except urllib.error.HTTPError as error:
+        raise AssertionError(str(error) + ': ' + error.read().decode()) from error
 def get(path):
-    return client.open(base + path).read().decode()
+    return response(base + path).decode()
 def post(path, fields):
     req = urllib.request.Request(base + path, urllib.parse.urlencode(fields).encode())
-    return json.loads(client.open(req).read())
+    return json.loads(response(req))
 r = post('/connectors/index.php', dict(action='security/login', username='multipic-ci', password='multipic-ci-only-admin', login_context='mgr'))
 assert r['success'], r
 page = get('/manager/?a=resource/update&id=' + sys.argv[2])
@@ -18,14 +23,16 @@ r = post(cfg['connector'], dict(action='heartbeat', token=cfg['token'], HTTP_MOD
 assert r['success'], r
 print('PASS: real manager session survives TV render and separate connector request')
 # multipart file upload, not a direct Service call
-png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=')
+def chunk(kind, data):
+    return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(b'\x00\xff\x00\x00')) + chunk(b'IEND', b'')
 boundary = 'MultiPicHttpFixtureBoundary'
 parts = []
 for key, value in dict(action='upload', token=cfg['token'], HTTP_MODAUTH=cfg['auth']).items():
     parts.append(('--' + boundary + '\r\nContent-Disposition: form-data; name="' + key + '"\r\n\r\n' + value + '\r\n').encode())
 parts += [('--' + boundary + '\r\nContent-Disposition: form-data; name="file"; filename="http-test.png"\r\nContent-Type: image/png\r\n\r\n').encode(), png, ('\r\n--' + boundary + '--\r\n').encode()]
 req = urllib.request.Request(base + cfg['connector'], b''.join(parts), {'Content-Type': 'multipart/form-data; boundary=' + boundary})
-r = json.loads(client.open(req).read())
+r = json.loads(response(req))
 assert r['success'] and r['object']['file'], r
 print('PASS: image uploads through authenticated HTTP connector')
 
