@@ -35,6 +35,21 @@ req = urllib.request.Request(base + cfg['connector'], b''.join(parts), {'Content
 r = json.loads(response(req))
 assert r['success'] and r['object']['file'], r
 print('PASS: image uploads through authenticated HTTP connector')
+item = r['object']
+record = json.loads(re.search(r',record:\s*(\{[^\n]+\})', page).group(1))
+fields = {key: (json.dumps(value) if isinstance(value, (dict, list)) else int(value) if isinstance(value, bool) else '' if value is None else value) for key, value in record.items()}
+gallery = cfg['data']
+gallery['items'] = [item]
+fields.update(action='resource/update', HTTP_MODAUTH=cfg['auth'], tvs=1, multipic_tokens=json.dumps([cfg['token']]))
+fields[cfg['field']] = json.dumps(gallery)
+r = post('/connectors/index.php', fields)
+assert r['success'], r
+reloaded = get('/manager/?a=resource/update&id=' + sys.argv[2])
+new_cfg = json.loads(html.unescape(re.findall(r'data-multipic-config="([^"]+)"', reloaded)[0]))
+assert new_cfg['data']['items'][0]['file'] == item['file']
+r = post(cfg['connector'], dict(action='heartbeat', token=cfg['token'], HTTP_MODAUTH=cfg['auth']))
+assert r['success'], r
+print('PASS: resource saves uploaded gallery through actual manager processor and reloads it')
 
 closed = get('/multipic-ci-closed.php')
 closed_cfg = json.loads(html.unescape(re.findall(r'data-multipic-config="([^"]+)"', closed)[0]))
