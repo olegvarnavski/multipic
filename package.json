@@ -1,0 +1,12 @@
+{
+  "name": "multipic-development-checks",
+  "version": "0.1.1-alpha",
+  "private": true,
+  "description": "Development-only DOM checks; no npm dependencies are installed on the MODX site",
+  "scripts": {
+    "test": "node tests/editor.cjs && node tests/editor-dom.cjs"
+  },
+  "devDependencies": {
+    "linkedom": "0.18.13"
+  }
+}

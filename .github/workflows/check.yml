@@ -36,7 +36,8 @@ jobs:
           php tests/image.php
           php tests/snippet.php
           node --check assets/components/multipic/js/multipic.js
-          node tests/editor.cjs
+          npm ci --ignore-scripts
+          npm test
       - name: Prepare disposable MODX 2.8.6
         run: |
           curl --fail --location --retry 3 https://modx.com/download/direct/modx-2.8.6-pl.zip -o /tmp/modx.zip
@@ -51,6 +52,7 @@ jobs:
           php _build/build.transport.php /tmp/multipic-site/modx-2.8.6-pl/config.core.php
           cp /tmp/multipic-site/modx-2.8.6-pl/core/packages/multipic-0.1.1-alpha.transport.zip dist/
           php tests/integration.php /tmp/multipic-site/modx-2.8.6-pl/config.core.php
+          php tests/render-integration.php /tmp/multipic-site/modx-2.8.6-pl/config.core.php
       - name: Keep tested installer
         uses: actions/upload-artifact@v4
         with:
