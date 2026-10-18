@@ -42,6 +42,43 @@ final class Service
             token CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, file CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, touched INT NOT NULL,
             PRIMARY KEY(token,file), KEY file_idx(file)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $this->query("CREATE TABLE IF NOT EXISTS {$this->prefix}editors (
+            token CHAR(64) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+            user INT NOT NULL, auth CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            tv INT NOT NULL, resource INT NOT NULL, context VARCHAR(100) NOT NULL,
+            baseline CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, touched INT NOT NULL,
+            KEY touched_idx(touched)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    }
+    // Separate rows avoid losing new gallery tokens when another manager request
+    // writes an older PHP session snapshot, or an extension closes the session early.
+    private function editorAuth(): string
+    {
+        return hash('sha256', (string)$this->modx->user->getUserToken('mgr'));
+    }
+    public function createEditor(int $tv, int $resource, string $context): string
+    {
+        $token=bin2hex(random_bytes(32));
+        $this->query("INSERT INTO {$this->prefix}editors(token,user,auth,tv,resource,context,baseline,touched) VALUES(?,?,?,?,?,?,?,?)",
+            [$token,(int)$this->modx->user->get('id'),$this->editorAuth(),$tv,$resource,$context,$this->fingerprint($resource),time()]);
+        return $token;
+    }
+    public function editor(string $token): ?array
+    {
+        if(!preg_match('/^[a-f0-9]{64}$/D',$token))return null;
+        $cap=$this->query("SELECT * FROM {$this->prefix}editors WHERE token=? AND user=? AND auth=? AND touched>=?",
+            [$token,(int)$this->modx->user->get('id'),$this->editorAuth(),time()-86400])->fetch(\PDO::FETCH_ASSOC);
+        return $cap ?: null;
+    }
+    public function touchEditor(string $token): void
+    {
+        $this->query("UPDATE {$this->prefix}editors SET touched=? WHERE token=? AND user=? AND auth=?",
+            [time(),$token,(int)$this->modx->user->get('id'),$this->editorAuth()]);
+    }
+    public function savedEditor(string $token, int $resource): void
+    {
+        $this->query("UPDATE {$this->prefix}editors SET resource=?,baseline=?,touched=? WHERE token=? AND user=? AND auth=?",
+            [$resource,$this->fingerprint($resource),time(),$token,(int)$this->modx->user->get('id'),$this->editorAuth()]);
     }
     public function acquire(): void
     {
@@ -78,7 +115,7 @@ final class Service
         $props = $tv->get('input_properties');
         if (is_string($props)) { $props = @unserialize($props, ['allowed_classes' => false]); }
         $props = is_array($props) ? $props : [];
-        $source = $tv->getSource($context);
+        $source = !empty($props['mediaSource']) ? $this->modx->getObject('sources.modMediaSource', (int)$props['mediaSource']) : $tv->getSource($context);
         if (!$source) { throw new \RuntimeException('Не выбран медиаисточник TV'); }
         $source->initialize();
         if (!$source->checkPolicy('view') || !$source->checkPolicy('create')) { throw new \RuntimeException('Нет доступа к источнику'); }
@@ -252,7 +289,7 @@ final class Service
         $tokens=$this->tokens($post);
         $caps=[];
         foreach(is_array($tokens)?$tokens:[] as $token) {
-            $cap=$_SESSION['multipic'][$token] ?? null;
+            $cap=$this->editor($token);
             if($cap && (int)$cap['user']===(int)$this->modx->user->get('id') && ((int)$cap['resource']===$resource || (!$resource && !$cap['resource']))) {
                 if($resource && $cap['baseline']!==$this->fingerprint($resource)) { throw new \RuntimeException('Галерея уже изменена в другом окне. Обновите ресурс перед сохранением.'); }
                 $caps[$token]=$cap;
@@ -292,6 +329,7 @@ final class Service
     {
         return $this->locked(function () {
             $this->query("DELETE FROM {$this->prefix}leases WHERE touched<?",[time()-86400]);
+            $this->query("DELETE FROM {$this->prefix}editors WHERE touched<?",[time()-86400]);
             $pending=$this->query("SELECT 1 FROM {$this->prefix}files f LEFT JOIN {$this->prefix}refs r ON r.file=f.id LEFT JOIN {$this->prefix}leases l ON l.file=f.id WHERE r.file IS NULL AND l.file IS NULL LIMIT 1")->fetchColumn();
             if(!$pending)return ['removed'=>0,'failed'=>0];
             // Alpha correctness guard: rebuild known fields before any physical deletion.

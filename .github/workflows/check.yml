@@ -54,7 +54,7 @@ jobs:
           MULTIPIC_TEST_SITE: '1'
         run: |
           php _build/build.transport.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
-          cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.1.2-alpha.transport.zip dist/
+          cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.1.3-alpha.transport.zip dist/
           php tests/integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
           php tests/render-integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
       - name: Real HTTP manager session and upload
@@ -73,4 +73,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: multipic-php74-modx-${{ matrix.modx }}
-          path: dist/multipic-0.1.2-alpha.transport.zip
+          path: dist/multipic-0.1.3-alpha.transport.zip

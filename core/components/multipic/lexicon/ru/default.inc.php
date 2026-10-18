@@ -1,6 +1,17 @@
 <?php
 $_lang['multipic']='MultiPic — галерея изображений';
-$_lang['multipic.folder']='Папка загрузки по умолчанию';
-$_lang['multipic.max_files']='Максимум изображений';
-$_lang['multipic.max_edge']='Максимум пикселей по длинной стороне';
-$_lang['multipic.quality']='Качество JPG/WebP';
+$_lang['area_multipic']='Галереи MultiPic';
+$_lang['setting_multipic.folder']='Папка загрузки по умолчанию';
+$_lang['setting_multipic.folder_desc']='Путь относительно выбранного источника файлов, например multipic/. В настройках TV можно указать отдельную папку.';
+$_lang['setting_multipic.max_files']='Максимум изображений в галерее';
+$_lang['setting_multipic.max_files_desc']='Лимит добавления файлов. По умолчанию 30. В настройках TV можно задать другое значение. Количество вывода на сайте задаётся отдельно в сниппете.';
+$_lang['setting_multipic.max_edge']='Максимальная сторона изображения, пиксели';
+$_lang['setting_multipic.max_edge_desc']='Изображения большего размера уменьшаются с сохранением пропорций. Например 2560. Значение 0 отключает уменьшение; небольшие изображения не увеличиваются.';
+$_lang['setting_multipic.quality']='Качество JPEG и WebP';
+$_lang['setting_multipic.quality_desc']='Число от 1 до 100. По умолчанию 95. Чем выше качество, тем больше размер файла. На PNG не влияет.';
+$_lang['setting_multipic.max_bytes']='Максимальный размер исходного файла, байты';
+$_lang['setting_multipic.max_bytes_desc']='Ограничение одного загружаемого файла до обработки. 20971520 байт = 20 МБ. Также действуют ограничения загрузки PHP.';
+$_lang['setting_multipic.max_pixels']='Максимальное число пикселей исходного изображения';
+$_lang['setting_multipic.max_pixels_desc']='Ширина × высота до обработки. По умолчанию 24000000 (24 Мп). Ограничивает расход памяти при открытии больших изображений.';
+$_lang['setting_multipic.chunks_path']='Базовая папка файловых чанков';
+$_lang['setting_multipic.chunks_path_desc']='Разрешённая папка шаблонов для @FILE. Поддерживается {core_path}. Обычные и статические чанки из админки можно вызывать по имени.';

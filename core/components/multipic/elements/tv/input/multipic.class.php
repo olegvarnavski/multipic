@@ -19,8 +19,7 @@ if (!class_exists('MultiPicInputRender')) {
                 $context=$resource ? $resource->get('context_key') : 'web';
                 $service=new \MultiPic\Service($this->modx);
                 $cfg=$service->config($root,$context);
-                $token=bin2hex(random_bytes(32));
-                $_SESSION['multipic'][$token]=['tv'=>(int)$root->get('id'),'resource'=>$rid,'context'=>$context,'user'=>(int)$this->modx->user->get('id'),'created'=>time(),'baseline'=>$service->fingerprint($rid)];
+                $token=$service->createEditor((int)$root->get('id'),$rid,$context);
                 $data=$value ? \MultiPic\Gallery::decode($value) : ['type'=>'multipic','version'=>1,'gallery'=>bin2hex(random_bytes(16)),'items'=>[]];
                 $data['tv']=(int)$root->get('id');
                 $data['session']=$token;
@@ -37,8 +36,8 @@ if (!class_exists('MultiPicInputRender')) {
                     unset($item);
                 });
                 $asset=$this->modx->getOption('assets_url').'components/multipic/';
-                $this->modx->regClientCSS($asset.'css/multipic.css');
-                $this->modx->regClientStartupScript($asset.'js/multipic.js');
+                $this->modx->regClientCSS($asset.'css/multipic.css?multipic=013');
+                $this->modx->regClientStartupScript($asset.'js/multipic.js?multipic=013');
                 $id='multipic-'.bin2hex(random_bytes(8));
                 $json=json_encode(['id'=>$id,'field'=>'tv'.$this->tv->get('id'),'token'=>$token,'data'=>$data,'max'=>$cfg['max'],'source'=>$cfg['source'],'connector'=>$asset.'connector.php','auth'=>$this->modx->user->getUserToken('mgr')],JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP|JSON_THROW_ON_ERROR);
                 $this->setPlaceholder('multipic_id',$id);

@@ -8,9 +8,11 @@ try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$modx->user->hasSessionContext('mgr')) { throw new RuntimeException('Требуется авторизация менеджера'); }
     $auth=$_POST['HTTP_MODAUTH'] ?? ($_SERVER['HTTP_MODAUTH'] ?? '');
     if (!hash_equals((string)$modx->user->getUserToken('mgr'),(string)$auth)) { throw new RuntimeException('Сессия истекла. Откройте ресурс заново.'); }
+    require_once MODX_CORE_PATH.'components/multipic/model/Service.php';
+    $service=new \MultiPic\Service($modx);
     $token=(string)($_POST['token'] ?? '');
-    $cap=$_SESSION['multipic'][$token] ?? null;
-    if (!$cap || (int)$cap['user'] !== (int)$modx->user->get('id') || $cap['created'] < time()-86400) { throw new RuntimeException('Недействительная сессия галереи'); }
+    $cap=$service->editor($token);
+    if (!$cap) { throw new RuntimeException('Сессия галереи истекла. Откройте ресурс заново.'); }
     if (!$modx->hasPermission('save_document')) { throw new RuntimeException('Нет права сохранения ресурса'); }
     if ($cap['resource']) {
         $res=$modx->getObject('modResource',$cap['resource']);
@@ -18,10 +20,8 @@ try {
     } elseif (!$modx->hasPermission('new_document')) { throw new RuntimeException('Нет права создания ресурса'); }
     $tv=$modx->getObject('modTemplateVar',$cap['tv']);
     if (!$tv || !$tv->checkPolicy('view')) { throw new RuntimeException('Нет доступа к TV'); }
-    require_once MODX_CORE_PATH.'components/multipic/model/Service.php';
-    $service=new \MultiPic\Service($modx);
     $cfg=$service->config($tv,$cap['context']);
-    $_SESSION['multipic'][$token]['created']=time();
+    $service->touchEditor($token);
     $action=$_POST['action'] ?? '';
     if ($action === 'heartbeat') {
         $service->query('UPDATE '.$modx->getOption('table_prefix').'multipic_leases SET touched=? WHERE token=?',[time(),$token]);

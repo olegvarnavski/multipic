@@ -7,7 +7,7 @@ $modx=new modX();$modx->initialize('mgr');$modx->user=$modx->getObject('modUser'
 if(!$modx->user || !$modx->user->get('sudo'))throw new RuntimeException('CI admin not found');
 function expect($condition,$message){if(!$condition)throw new RuntimeException($message);echo 'PASS: '.$message.PHP_EOL;}
 function processor($action,$params=[]){global $modx;$r=$modx->runProcessor($action,$params);if($r->isError())throw new RuntimeException($action.': '.json_encode($r->getResponse()));return $r->getObject();}
-$package='multipic-0.1.2-alpha';
+$package='multipic-0.1.3-alpha';
 copy(__DIR__.'/../dist/'.$package.'.transport.zip',MODX_CORE_PATH.'packages/'.$package.'.transport.zip');
 processor('workspace/packages/scanlocal');processor('workspace/packages/install',['signature'=>$package]);
 expect((bool)$modx->getObject('modSnippet',['name'=>'MultiPic']),'transport install creates snippet');
@@ -21,8 +21,14 @@ $link=$modx->newObject('modTemplateVarTemplate');$link->fromArray(['tmplvarid'=>
 $source=$modx->newObject('sources.modMediaSourceElement');$source->fromArray(['source'=>1,'object'=>$tv->get('id'),'object_class'=>'modTemplateVar','context_key'=>'web'],'',true,true);expect($source->save(),'assign source to TV');
 $resource=$modx->newObject('modDocument');$resource->fromArray(['pagetitle'=>'MultiPic CI','template'=>$template->get('id'),'context_key'=>'web','published'=>1]);expect($resource->save(),'create resource');
 $modx->resource=$resource;
-$cfg=$service->config($tv,'web');$token=str_repeat('a',64);
-$_SESSION['multipic'][$token]=['tv'=>(int)$tv->get('id'),'resource'=>(int)$resource->get('id'),'user'=>(int)$modx->user->get('id'),'context'=>'web','created'=>time(),'baseline'=>$service->fingerprint((int)$resource->get('id'))];
+$cfg=$service->config($tv,'web');$token=$service->createEditor((int)$tv->get('id'),(int)$resource->get('id'),'web');
+expect((bool)$service->editor($token),'editor capability persisted independently of PHP session');
+$auth=$modx->user->getUserToken('mgr');$_SESSION['modx.mgr.user.token']='different-manager-session';
+expect($service->editor($token)===null,'editor rejects different manager authentication token');
+$_SESSION['modx.mgr.user.token']=$auth;
+$service->query('UPDATE '.$modx->getOption('table_prefix').'multipic_editors SET touched=? WHERE token=?',[time()-86401,$token]);
+expect($service->editor($token)===null,'expired editor capability rejected');
+$service->touchEditor($token);
 $temp=tempnam(sys_get_temp_dir(),'mp-test-');$image=imagecreatetruecolor(200,100);imagepng($image,$temp);imagedestroy($image);
 $item=$service->upload($temp,'001.png',$cfg,$token,'Ход строительства');
 $again=$service->upload($temp,'other-name.png',$cfg,$token,'Ignored');
