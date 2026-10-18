@@ -12,7 +12,7 @@ r = post('/connectors/index.php', dict(action='security/login', username='multip
 assert r['success'], r
 page = get('/manager/?a=resource/update&id=' + sys.argv[2])
 matches = re.findall(r'data-multipic-config="([^"]+)"', page)
-assert matches, 'Gallery missing from real manager page: ' + page[-1500:]
+assert matches, 'Gallery missing from real manager page: ' + '\n'.join(line for line in page.splitlines() if any(word in line.lower() for word in ['multipic', 'error', 'exception']))[:4000]
 cfg = json.loads(html.unescape(matches[0]))
 r = post(cfg['connector'], dict(action='heartbeat', token=cfg['token'], HTTP_MODAUTH=cfg['auth']))
 assert r['success'], r
