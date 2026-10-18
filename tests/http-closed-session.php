@@ -6,6 +6,7 @@ $modx=new modX();$modx->initialize('mgr');
 if(!$modx->user->hasSessionContext('mgr')){http_response_code(403);exit;}
 $modx->resource=$modx->getObject('modResource',['pagetitle'=>'MultiPic CI']);
 $tv=$modx->getObject('modTemplateVar',['name'=>'multipicCiGallery']);
+$modx->runProcessor('element/tv/renders/getinputproperties',['type'=>'multipic','tv'=>$tv->get('id')]);
 // Model a manager extension releasing PHP session before rendering a TV.
 session_write_close();
 echo $tv->renderInput($modx->resource);
