@@ -15,7 +15,8 @@ final class Service
                 if(!class_exists($alias))class_alias('MODX\\Revolution\\'.$alias,$alias);
             }
         }
-        $this->db = $modx->getConnection();
+        // MODX 2 returns xPDOConnection here, not PDO. Use the xPDO transaction/prepare API.
+        $this->db = $modx;
         $this->prefix = $modx->getOption('table_prefix') . 'multipic_';
         if (!preg_match('/^[a-zA-Z0-9_]+$/D', $this->prefix)) { throw new \RuntimeException('Некорректный префикс БД'); }
     }

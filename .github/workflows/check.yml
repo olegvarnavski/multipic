@@ -31,6 +31,7 @@ jobs:
       - name: Syntax and unit checks
         run: |
           find core assets _build tests -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/database-api.php
           php tests/gallery.php
           php tests/image.php
           php tests/snippet.php
