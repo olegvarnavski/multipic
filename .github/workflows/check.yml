@@ -1,4 +1,4 @@
-name: PHP 7.4 and MODX 2.8.6
+name: PHP 7.4 and MODX 2.x
 on:
   push:
     branches: [main]
@@ -8,6 +8,10 @@ permissions:
   contents: read
 jobs:
   verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        modx: ["2.6.0", "2.6.5", "2.8.5", "2.8.6"]
     runs-on: ubuntu-22.04
     services:
       mysql:
@@ -38,23 +42,23 @@ jobs:
           node --check assets/components/multipic/js/multipic.js
           npm ci --ignore-scripts
           npm test
-      - name: Prepare disposable MODX 2.8.6
+      - name: Prepare disposable MODX ${{ matrix.modx }}
         run: |
-          curl --fail --location --retry 3 https://modx.com/download/direct/modx-2.8.6-pl.zip -o /tmp/modx.zip
+          curl --fail --location --retry 3 https://modx.com/download/direct/modx-${{ matrix.modx }}-pl.zip -o /tmp/modx.zip
           unzip -q /tmp/modx.zip -d /tmp/multipic-site
-          php tests/prepare-site.php /tmp/multipic-site/modx-2.8.6-pl
-          php /tmp/multipic-site/modx-2.8.6-pl/setup/index.php --installmode=new
-          test -f /tmp/multipic-site/modx-2.8.6-pl/config.core.php
+          php tests/prepare-site.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl
+          php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/setup/index.php --installmode=new
+          test -f /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
       - name: Build on actual installed MODX and test installation
         env:
           MULTIPIC_TEST_SITE: '1'
         run: |
-          php _build/build.transport.php /tmp/multipic-site/modx-2.8.6-pl/config.core.php
-          cp /tmp/multipic-site/modx-2.8.6-pl/core/packages/multipic-0.1.1-alpha.transport.zip dist/
-          php tests/integration.php /tmp/multipic-site/modx-2.8.6-pl/config.core.php
-          php tests/render-integration.php /tmp/multipic-site/modx-2.8.6-pl/config.core.php
+          php _build/build.transport.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
+          cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.1.2-alpha.transport.zip dist/
+          php tests/integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
+          php tests/render-integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
       - name: Keep tested installer
         uses: actions/upload-artifact@v4
         with:
-          name: multipic-php74-modx286
-          path: dist/multipic-0.1.1-alpha.transport.zip
+          name: multipic-php74-modx-${{ matrix.modx }}
+          path: dist/multipic-0.1.2-alpha.transport.zip

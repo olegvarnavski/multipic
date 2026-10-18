@@ -7,7 +7,7 @@ $modx=new modX();$modx->initialize('mgr');$modx->user=$modx->getObject('modUser'
 if(!$modx->user || !$modx->user->get('sudo'))throw new RuntimeException('CI admin not found');
 function expect($condition,$message){if(!$condition)throw new RuntimeException($message);echo 'PASS: '.$message.PHP_EOL;}
 function processor($action,$params=[]){global $modx;$r=$modx->runProcessor($action,$params);if($r->isError())throw new RuntimeException($action.': '.json_encode($r->getResponse()));return $r->getObject();}
-$package='multipic-0.1.1-alpha';
+$package='multipic-0.1.2-alpha';
 copy(__DIR__.'/../dist/'.$package.'.transport.zip',MODX_CORE_PATH.'packages/'.$package.'.transport.zip');
 processor('workspace/packages/scanlocal');processor('workspace/packages/install',['signature'=>$package]);
 expect((bool)$modx->getObject('modSnippet',['name'=>'MultiPic']),'transport install creates snippet');

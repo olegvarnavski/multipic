@@ -16,7 +16,7 @@ if ($modern) {
     $builder=new \MODX\Revolution\Transport\modPackageBuilder($modx);
 } else { $modx->loadClass('transport.modPackageBuilder','',false,true);$builder=new modPackageBuilder($modx); }
 $class=function($name) use ($modern) { return $modern ? 'MODX\\Revolution\\'.$name : $name; };
-$builder->createPackage('multipic','0.1.1','alpha');
+$builder->createPackage('multipic','0.1.2','alpha');
 $namespace=$modx->newObject($class('modNamespace'));$namespace->fromArray(['name'=>'multipic','path'=>'{core_path}components/multipic/','assets_path'=>'{assets_path}components/multipic/'],'',true,true);
 $builder->registerNamespace($namespace,false,true);
 $settings=['folder'=>'multipic/','max_files'=>30,'max_edge'=>2560,'quality'=>95,'max_bytes'=>20971520,'max_pixels'=>24000000,'chunks_path'=>'{core_path}elements/chunks/'];
@@ -38,6 +38,6 @@ $vehicle->resolve('file',['source'=>$root.'core/components/multipic','target'=>"
 $vehicle->resolve('file',['source'=>$root.'assets/components/multipic','target'=>"return MODX_ASSETS_PATH.'components/';"]);
 $vehicle->resolve('php',['source'=>__DIR__.'/resolver.php']);
 $builder->putVehicle($vehicle);
-$builder->setPackageAttributes(['readme'=>file_get_contents($root.'README.md'),'license'=>'Copyright 2026. MultiPic project.','requires'=>['php'=>'>=7.4','modx'=>'>=2.8.6 <3.0.0']]);
+$builder->setPackageAttributes(['readme'=>file_get_contents($root.'README.md'),'license'=>'Copyright 2026. MultiPic project.']);
 if(!$builder->pack())throw new RuntimeException('Не удалось собрать пакет');
 echo $builder->directory.$builder->filename.PHP_EOL;
