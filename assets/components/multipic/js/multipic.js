@@ -1,0 +1,156 @@
+(function (root) {
+    'use strict';
+    const natural = (a, b) => a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'});
+    function select(items, parity='all', offset=0, limit=0) {
+        const rows = items.filter(x=>x.active).map((x,i)=>({...x,idx:i+1})).filter(x=>parity==='all'||(parity==='odd'?x.idx%2:!(x.idx%2)));
+        return rows.slice(offset,limit>0?offset+limit:undefined);
+    }
+    if (typeof module !== 'undefined') module.exports={natural,select};
+    if (!root.document || root.MultiPic) return;
+    const instances=new Set();
+    const icons={eye:'◉',hidden:'◌',edit:'✎',remove:'×',drag:'⠿'};
+    const tokens=new Set();
+    function pendingWithin(container){return [...instances].some(x=>document.contains(x.node)&&(!container||container.contains(x.node))&&(x.running||x.queue.length));}
+    function waitMessage(){if(root.Ext&&Ext.Msg)Ext.Msg.alert('MultiPic','Дождитесь завершения загрузки изображений.');else alert('Дождитесь завершения загрузки изображений.');}
+    function installFormHooks(){
+        if(!root.Ext)return;
+        const panel=Ext.getCmp('modx-panel-resource');
+        if(panel&&!panel._multipicHooks){
+            panel._multipicHooks=true;
+            panel.on('beforeSubmit',function(o){
+                if(pendingWithin()){waitMessage();return false;}
+                const form=o.form||panel.getForm();
+                form.baseParams=form.baseParams||{};
+                form.baseParams.multipic_tokens=JSON.stringify([...tokens]);
+            });
+        }
+        // MIGX saves through doSubmit(), not the resource panel beforeSubmit event.
+        // Wrap only existing window instances containing our editor; do not modify global MIGX prototypes.
+        for(const editor of instances){
+            const node=editor.node.closest('.x-window');
+            const win=node&&Ext.getCmp(node.id);
+            if(!win||win._multipicHooks||typeof win.doSubmit!=='function')continue;
+            win._multipicHooks=true;
+            const original=win.doSubmit;
+            win.doSubmit=function(){if(pendingWithin(node)){waitMessage();return false;}return original.apply(this,arguments);};
+        }
+    }
+    const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
+    function button(label, callback, cls='') {const b=el('button',cls,label);b.type='button';b.addEventListener('click',callback);return b;}
+    class Editor {
+        constructor(node,cfg) {
+            this.node=node;this.cfg=cfg;this.items=cfg.data.items;this.selected=new Set();this.queue=[];this.running=0;this.editing=null;
+            this.field=node.previousElementSibling;
+            if (!this.field || this.field.name!==cfg.field) this.field=document.getElementById(cfg.field);
+            this.node.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();this.node.classList.add('mp-over');}});
+            this.node.addEventListener('dragleave',()=>this.node.classList.remove('mp-over'));
+            this.node.addEventListener('drop',e=>{if(e.dataTransfer.files.length){e.preventDefault();this.node.classList.remove('mp-over');this.addFiles([...e.dataTransfer.files]);}});
+            this.render(); this.registerToken();
+            this.timer=setInterval(()=>{if(!document.contains(this.node)){clearInterval(this.timer);instances.delete(this);return;}this.request('heartbeat').catch(()=>{});},60000);
+            instances.add(this);installFormHooks();
+        }
+        registerToken() {
+            // One top-level hidden field, included in normal MODX resource form submission.
+            tokens.add(this.cfg.token);
+            const form=document.getElementById('modx-resource-form') || this.node.closest('form');
+            if(!form)return;
+            let field=form.querySelector('input[name="multipic_tokens"]');
+            if(!field){field=el('input');field.type='hidden';field.name='multipic_tokens';field.value='[]';form.append(field);}
+            const values=JSON.parse(field.value);if(!values.includes(this.cfg.token)){values.push(this.cfg.token);field.value=JSON.stringify(values);}
+        }
+        async request(action,extra={}) {
+            const form=new FormData();Object.entries({action,token:this.cfg.token,HTTP_MODAUTH:this.cfg.auth,...extra}).forEach(([k,v])=>form.append(k,v));
+            const r=await fetch(this.cfg.connector,{method:'POST',body:form,credentials:'same-origin'});
+            let data;try{data=await r.json();}catch(e){throw Error('Сервер вернул некорректный ответ');}
+            if(!r.ok||!data.success)throw Error(data.message||'Ошибка запроса');return data.object;
+        }
+        save() {
+            this.cfg.data.items=this.items.filter(x=>!x._pending&&!x._error).map(({_file,_path,_pending,_error,name,...x})=>x);
+            this.field.value=JSON.stringify(this.cfg.data);
+            this.field.dispatchEvent(new Event('change',{bubbles:true}));
+            installFormHooks();
+            if(root.Ext){const f=Ext.getCmp(this.cfg.field);if(f){f.setValue(this.field.value);f.fireEvent('change',f,this.field.value);}}
+            if(root.MODx&&MODx.fireResourceFormChange)MODx.fireResourceFormChange();
+        }
+        addFiles(files) {
+            files.sort(natural);
+            // Keep all candidates in queue; duplicates/errors do not consume a free slot.
+            for(const file of files)this.queue.push({_file:file,name:file.name});
+            this.pump();
+        }
+        pump() {
+            while(this.running<2&&this.queue.length) {
+                const count=this.items.filter(x=>!x._error).length;
+                if(count>=this.cfg.max){
+                    if(this.running)return;
+                    this.notice='Не добавлены из-за лимита: '+this.queue.map(x=>x.name).join(', ');this.queue=[];this.render();return;
+                }
+                const candidate=this.queue.shift();const item={id:'pending-'+Math.random().toString(36).slice(2),active:true,_pending:true,...candidate};
+                this.items.push(item);this.running++;this.render();this.run(item);
+            }
+        }
+        async run(item) {
+            try {
+                const uploaded=await this.request(item._path?'import':'upload',item._path?{path:item._path}:{file:item._file});
+                if(!this.items.includes(item))return;
+                if(this.items.some(x=>x!==item&&x.file===uploaded.file)){this.items.splice(this.items.indexOf(item),1);this.notice='Уже добавлено: '+item.name;}
+                else {Object.assign(item,uploaded,{_pending:false,_error:null});delete item._file;delete item._path;}
+                this.save();
+            }catch(e){if(this.items.includes(item)){item._pending=false;item._error=e.message;}}
+            finally{this.running--;this.render();this.pump();}
+        }
+        importFile() {
+            if(!root.MODx||!MODx.load){this.notice='Файловый менеджер MODX недоступен';this.render();return;}
+            const browser=MODx.load({xtype:'modx-browser',source:this.cfg.source,allowedFileTypes:'jpg,jpeg,png,webp',multiple:false,
+                listeners:{select:{fn:data=>{this.queue.push({_path:data.relativeUrl||data.url,name:data.name||data.relativeUrl||'image'});this.pump();},scope:this}}});
+            browser.show();
+        }
+        remove(ids){this.items=this.items.filter(x=>!ids.has(x.id));this.selected.clear();this.editing=null;this.save();this.render();}
+        render() {
+            this.node.replaceChildren();
+            const toolbar=el('div','mp-toolbar');
+            const input=el('input');input.type='file';input.multiple=true;input.accept='image/jpeg,image/png,image/webp';input.hidden=true;
+            input.addEventListener('change',()=>{this.addFiles([...input.files]);input.value='';});
+            toolbar.append(button('Загрузить изображения',()=>input.click()),button('Выбрать на сервере',()=>this.importFile()),el('span','mp-count',this.items.filter(x=>!x._error).length+' / '+this.cfg.max),input);
+            this.node.append(toolbar,el('div','mp-drop','Перетащите изображения сюда'));
+            const grid=el('div','mp-grid');this.node.append(grid);
+            const cover=this.items.find(x=>x.active&&!x._pending&&!x._error);
+            this.items.forEach((item,index)=>{
+                const card=el('div','mp-card'+(!item.active?' mp-hidden':'')+(this.selected.has(item.id)?' mp-selected':''));card.dataset.id=item.id;
+                const pic=el('div','mp-pic');
+                if(item.thumb||item.url){const image=el('img');image.src=item.thumb||item.url;image.alt=item.alt||'';image.loading='lazy';image.addEventListener('click',()=>this.preview(item));pic.append(image);}
+                const check=el('input','mp-check');check.type='checkbox';check.checked=this.selected.has(item.id);check.setAttribute('aria-label','Выбрать изображение '+(index+1));check.addEventListener('change',()=>{check.checked?this.selected.add(item.id):this.selected.delete(item.id);this.render();});pic.append(check);
+                const eye=button(item.active?icons.eye:icons.hidden,()=>{item.active=!item.active;this.save();this.render();},'mp-eye');eye.title=item.active?'Скрыть':'Показать';eye.setAttribute('aria-label',eye.title);pic.append(eye);
+                if(item===cover)pic.append(el('span','mp-cover','Обложка'));
+                if(item._pending)pic.append(el('span','mp-state','Загрузка…'));
+                if(item._error){const error=el('div','mp-error',item._error);error.append(button('Повторить',()=>{if(this.running>=2)return;if(this.items.filter(x=>!x._error).length>=this.cfg.max){this.notice='Достигнут лимит изображений';this.render();return;}item._error=null;item._pending=true;this.running++;this.render();this.run(item);}));pic.append(error);}
+                const footer=el('div','mp-footer');footer.append(el('span','',String(index+1).padStart(2,'0')));
+                const drag=button(icons.drag,()=>{},'mp-drag');drag.title='Перетащить; стрелки влево/вправо меняют порядок';drag.setAttribute('aria-label',drag.title);drag.draggable=true;
+                drag.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const target=this.items[index+(e.key==='ArrowLeft'?-1:1)];if(target)this.move(item.id,target.id);}});
+                drag.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/multipic',item.id);e.dataTransfer.effectAllowed='move';});
+                // Native touch scroll stays intact; pointer sorting starts only on this handle.
+                drag.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse')return;e.preventDefault();drag.setPointerCapture(e.pointerId);this.touchId=item.id;});
+                drag.addEventListener('pointerup',e=>{if(!this.touchId)return;const target=document.elementFromPoint(e.clientX,e.clientY);const dest=target&&target.closest('.mp-card');if(dest&&this.node.contains(dest))this.move(this.touchId,dest.dataset.id);this.touchId=null;});
+                drag.addEventListener('pointercancel',()=>{this.touchId=null;});
+                card.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('text/multipic'))e.preventDefault();});
+                card.addEventListener('drop',e=>{const from=e.dataTransfer.getData('text/multipic');if(from){e.preventDefault();this.move(from,item.id);}});
+                const edit=button(icons.edit,()=>{this.editing=this.editing===item.id?null:item.id;this.render();});edit.title='Название и ALT';edit.setAttribute('aria-label',edit.title);
+                const del=button(icons.remove,()=>this.remove(new Set([item.id])));del.title='Удалить';del.setAttribute('aria-label',del.title);
+                footer.append(drag,edit,del);card.append(pic,footer);grid.append(card);
+            });
+            const current=this.items.find(x=>x.id===this.editing);
+            if(current){const panel=el('div','mp-meta');for(const [key,label]of [['title','Название'],['alt','ALT']]){const wrap=el('label','',label);const field=el('input');field.type='text';field.value=current[key]||'';field.placeholder='Необязательно';field.maxLength=1000;field.addEventListener('input',()=>{current[key]=field.value;this.save();});wrap.append(field);panel.append(wrap);}panel.append(button('Закрыть',()=>{this.editing=null;this.render();}));this.node.append(panel);}
+            if(this.selected.size){const bulk=el('div','mp-bulk');bulk.append(el('span','','Выбрано: '+this.selected.size));for(const [label,active]of [['Показать',true],['Скрыть',false]])bulk.append(button(label,()=>{this.items.filter(x=>this.selected.has(x.id)).forEach(x=>x.active=active);this.save();this.render();}));bulk.append(button('Удалить',()=>this.remove(this.selected)));this.node.append(bulk);}
+            if(this.notice)this.node.append(el('div','mp-notice',this.notice));
+            this.node.append(el('div','mp-help','Перетащите миниатюры для сортировки. Изменения сохраняются вместе с ресурсом.'));
+        }
+        move(from,to){if(from===to)return;const a=this.items.findIndex(x=>x.id===from),b=this.items.findIndex(x=>x.id===to);if(a<0||b<0)return;const [item]=this.items.splice(a,1);this.items.splice(b,0,item);this.save();this.render();}
+        preview(item){const dialog=el('dialog','mp-preview');const image=el('img');image.src=item.url;image.alt=item.alt||'';dialog.append(button('Закрыть',()=>dialog.close()),image);dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();}
+    }
+    root.MultiPic={mountAll(){installFormHooks();document.querySelectorAll('[data-multipic-config]').forEach(node=>{if(node.dataset.mounted)return;node.dataset.mounted='1';try{new Editor(node,JSON.parse(node.dataset.multipicConfig));}catch(e){node.textContent='MultiPic: '+e.message;}});}};
+    document.addEventListener('DOMContentLoaded',()=>root.MultiPic.mountAll());
+    new MutationObserver(()=>root.MultiPic.mountAll()).observe(document.documentElement,{childList:true,subtree:true});
+    // Capture save clicks, including Ext buttons, before the form can be submitted.
+    document.addEventListener('click',e=>{if(!pendingWithin())return;const target=e.target.closest('button,a,.x-btn');if(target&&(/сохран|save/i.test(target.textContent)||/save/i.test(target.id))){e.preventDefault();e.stopImmediatePropagation();waitMessage();}},true);
+    root.addEventListener('beforeunload',e=>{if(pendingWithin()){e.preventDefault();e.returnValue='';}});
+})(typeof window!=='undefined'?window:globalThis);

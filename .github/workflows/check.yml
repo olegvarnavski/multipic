@@ -1,0 +1,57 @@
+name: PHP 7.4 and MODX 2.8.6
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    services:
+      mysql:
+        image: mysql:5.7
+        env:
+          MYSQL_ROOT_PASSWORD: multipic-ci-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -pmultipic-ci-only"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          extensions: gd, exif, fileinfo, pdo_mysql, xml, simplexml, mbstring, zip
+          coverage: none
+      - name: Syntax and unit checks
+        run: |
+          find core assets _build tests -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/gallery.php
+          php tests/image.php
+          php tests/snippet.php
+          node --check assets/components/multipic/js/multipic.js
+          node tests/editor.cjs
+      - name: Prepare disposable MODX 2.8.6
+        run: |
+          curl --fail --location --retry 3 https://modx.com/download/direct/modx-2.8.6-pl.zip -o /tmp/modx.zip
+          unzip -q /tmp/modx.zip -d /tmp/multipic-site
+          php tests/prepare-site.php /tmp/multipic-site/modx-2.8.6-pl
+          php /tmp/multipic-site/modx-2.8.6-pl/setup/index.php --installmode=new
+          test -f /tmp/multipic-site/modx-2.8.6-pl/config.core.php
+      - name: Build on actual installed MODX and test installation
+        env:
+          MULTIPIC_TEST_SITE: '1'
+        run: |
+          php _build/build.transport.php /tmp/multipic-site/modx-2.8.6-pl/config.core.php
+          cp /tmp/multipic-site/modx-2.8.6-pl/core/packages/multipic-0.1.1-alpha.transport.zip dist/
+          php tests/integration.php /tmp/multipic-site/modx-2.8.6-pl/config.core.php
+      - name: Keep tested installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: multipic-php74-modx286
+          path: dist/multipic-0.1.1-alpha.transport.zip
