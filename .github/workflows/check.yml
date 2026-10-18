@@ -57,6 +57,17 @@ jobs:
           cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.1.2-alpha.transport.zip dist/
           php tests/integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
           php tests/render-integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
+      - name: Real HTTP manager session and upload
+        env:
+          MULTIPIC_TEST_SITE: '1'
+        run: |
+          site=/tmp/multipic-site/modx-${{ matrix.modx }}-pl
+          resource_id=$(php tests/http-fixture.php "$site/config.core.php")
+          php -S 127.0.0.1:8085 -t "$site" >/tmp/multipic-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" || true; cat /tmp/multipic-http.log' EXIT
+          for attempt in $(seq 1 30); do curl -s http://127.0.0.1:8085/manager/ >/dev/null && break; sleep 1; done
+          python3 tests/http-upload.py http://127.0.0.1:8085 "$resource_id"
       - name: Keep tested installer
         uses: actions/upload-artifact@v4
         with:
