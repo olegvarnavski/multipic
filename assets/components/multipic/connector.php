@@ -27,6 +27,7 @@ try {
         $service->query('UPDATE '.$modx->getOption('table_prefix').'multipic_leases SET touched=? WHERE token=?',[time(),$token]);
         $result=[];
     } elseif ($action === 'upload' || $action === 'import') {
+        if(!$modx->hasPermission('file_upload'))throw new RuntimeException('Нет права загрузки файлов (file_upload)');
         $fallback=isset($res) ? (string)$res->get('pagetitle') : 'gallery';
         if ($action === 'upload') {
             $file=$_FILES['file'] ?? null;
@@ -41,6 +42,11 @@ try {
     } else { throw new RuntimeException('Неизвестная команда'); }
     echo json_encode(['success'=>true,'object'=>$result],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 } catch (Throwable $e) {
+    $requestId=bin2hex(random_bytes(6));
+    $context=['request'=>$requestId,'action'=>is_string($_POST['action'] ?? null)?substr($_POST['action'],0,30):'invalid','user'=>(int)$modx->user->get('id'),'tv'=>(int)($cap['tv'] ?? 0),'resource'=>(int)($cap['resource'] ?? 0),'error'=>get_class($e),'reason'=>$e instanceof RuntimeException?$e->getMessage():'internal_error'];
+    if(isset($service))$service->log('connector',$context);
+    else $modx->log(modX::LOG_LEVEL_ERROR,'[MultiPic connector] '.json_encode($context));
     http_response_code(400);
-    echo json_encode(['success'=>false,'message'=>$e->getMessage()],JSON_UNESCAPED_UNICODE);
+    $message=$e instanceof RuntimeException?$e->getMessage():'Не удалось выполнить запрос. Проверьте журнал MODX.';
+    echo json_encode(['success'=>false,'message'=>$message,'code'=>'multipic_request_failed','request'=>$requestId],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
 }

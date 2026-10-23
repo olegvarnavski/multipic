@@ -28,16 +28,18 @@ if (!class_exists('MultiPicInputRender')) {
                 $service->locked(function() use (&$data,$service,$token) {
                     foreach($data['items'] as &$item) {
                         $file=$service->file($item['file']);
-                        if(!$file || !is_file($file['path']))throw new RuntimeException('Файл галереи отсутствует. Восстановите его из резервной копии.');
+                        if(!$file){$item['_missing']='Файл отсутствует в реестре. Удалите карточку или восстановите резервную копию.';continue;}
                         $canonical=$service->item($file);
                         $item=array_merge($item,$canonical,['title'=>(string)($item['title'] ?? ''),'alt'=>(string)($item['alt'] ?? ''),'active'=>(bool)($item['active'] ?? true)]);
+                        if(!is_file($file['path']))$item['_missing']='Файл отсутствует. Можно удалить карточку или восстановить файл.';
+                        elseif(!is_file($file['thumb']))$item['_missingThumb']=true;
                         $service->lease($token,$file['id']);
                     }
                     unset($item);
                 });
                 $asset=$this->modx->getOption('assets_url').'components/multipic/';
-                $this->modx->regClientCSS($asset.'css/multipic.css?multipic=013');
-                $this->modx->regClientStartupScript($asset.'js/multipic.js?multipic=013');
+                $this->modx->regClientCSS($asset.'css/multipic.css?multipic=014');
+                $this->modx->regClientStartupScript($asset.'js/multipic.js?multipic=014');
                 $id='multipic-'.bin2hex(random_bytes(8));
                 $json=json_encode(['id'=>$id,'field'=>'tv'.$this->tv->get('id'),'token'=>$token,'data'=>$data,'max'=>$cfg['max'],'source'=>$cfg['source'],'connector'=>$asset.'connector.php','auth'=>$this->modx->user->getUserToken('mgr')],JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP|JSON_THROW_ON_ERROR);
                 $this->setPlaceholder('multipic_id',$id);

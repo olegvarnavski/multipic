@@ -29,3 +29,15 @@ $rootId=$tv->get('id');$tv->_fieldMeta['id']['phptype']='string';$tv->set('id','
 $html=$tv->getRender(['inputTVid'=>$rootId],'{"type":"multipic","version":1,"items":[]}',$tv->getRenderDirectories('OnTVInputRenderList','input'),'input',null,'multipic');
 if(strpos($html,'tvmigx_7_1')===false || strpos($html,'data-multipic-config')===false)throw new RuntimeException('MIGX synthetic TV ID rendering failed: '.$html);
 echo "PASS: MIGX inputTVid and synthetic field ID render through installed TV\n";
+
+// Missing files must not disable the entire installed editor.
+$oldResource=$modx->getObject('modResource',['pagetitle'=>'MultiPic upgrade preserved']);
+$old=MultiPic\Gallery::decode($oldResource->getTVValue('multipicUpgradeGallery'));
+$file=$service->file($old['items'][0]['file']);$backup=$file['path'].'.ci-backup';
+rename($file['path'],$backup);
+try {
+ $tv->set('id',$rootId);
+ $html=$tv->getRender(['inputTVid'=>$rootId],json_encode($old),$tv->getRenderDirectories('OnTVInputRenderList','input'),'input',null,'multipic');
+ if(strpos($html,'data-multipic-config')===false || strpos($html,'_missing')===false || strpos($html,'multipic-error')!==false)throw new RuntimeException('Missing file blocked entire editor');
+ echo "PASS: missing file rendered as removable card without disabling gallery\n";
+}finally{rename($backup,$file['path']);}

@@ -26,8 +26,10 @@ try {
     };
     $output='';
     foreach($items as $item) {
+        $item=array_intersect_key($item,array_flip(['id','file','url','thumb','width','height','title','alt','active','idx','iteration','first','last','odd','even']));
+        foreach(['width','height','idx','iteration'] as $number)$item[$number]=max(0,(int)($item[$number] ?? 0));
         // Encode brackets too: editor text must never become executable MODX tags.
-        foreach(['url','title','alt'] as $key) { $item[$key]=str_replace(['[',']'],['&#91;','&#93;'],htmlspecialchars((string)($item[$key] ?? ''),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')); }
+        foreach(['url','thumb','title','alt','id','file'] as $key) { $item[$key]=str_replace(['[',']'],['&#91;','&#93;'],htmlspecialchars((string)($item[$key] ?? ''),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')); }
         $output.=$render((string)($scriptProperties['tpl'] ?? 'multipicItem'),$item);
     }
     if ($output!=='' && !empty($scriptProperties['tplWrapper'])) { $output=$render($scriptProperties['tplWrapper'],['output'=>$output,'count'=>count($items)]); }

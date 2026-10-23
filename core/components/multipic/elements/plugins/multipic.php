@@ -9,8 +9,8 @@ if (in_array($event, ['OnTVInputRenderList','OnTVInputPropertiesList'], true)) {
 if($event==='OnDocFormPrerender') {
     if($modx->getCount('modTemplateVar',['type'=>'multipic'])) {
         $assets=$modx->getOption('assets_url').'components/multipic/';
-        $modx->regClientCSS($assets.'css/multipic.css?multipic=013');
-        $modx->regClientStartupScript($assets.'js/multipic.js?multipic=013');
+        $modx->regClientCSS($assets.'css/multipic.css?multipic=014');
+        $modx->regClientStartupScript($assets.'js/multipic.js?multipic=014');
     }
     return;
 }
@@ -29,10 +29,11 @@ try {
         $service->syncResource((int)$resource->get('id'));
         // Only leases explicitly submitted by this resource editor can be released.
         $tokens = $service->tokens($_POST);
+        $baseline=$service->fingerprint((int)$resource->get('id'));
         foreach (is_array($tokens) ? $tokens : [] as $token) {
             $cap = $service->editor($token);
             if ($cap && ((int)$cap['resource'] === (int)$resource->get('id') || (!$cap['resource'] && ($mode ?? '') === 'new')) && (int)$cap['user'] === (int)$modx->user->get('id')) {
-                $service->savedEditor($token,(int)$resource->get('id'));
+                $service->savedEditor($token,(int)$resource->get('id'),$baseline);
                 $service->query('DELETE FROM ' . $modx->getOption('table_prefix') . 'multipic_leases WHERE token=?', [$token]);
             }
         }
