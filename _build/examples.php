@@ -44,5 +44,16 @@ TPL
 {* Внутри foreach строк MIGX можно передать значение поля photos: *}
 {* $_modx->runSnippet('MultiPic', ['value'=>$row.photos, 'tpl'=>'multipicItem']) *}
 TPL
+],
+'multipicExampleMigx'=>['description'=>'Fenom: галерея внутри строки MIGX, phpThumbOn по желанию. URL уже включает источник.','content'=><<<'TPL'
+{* $child — строка MIGX, gallery — поле с inputTV=multipic.
+   $userfile к $photo.url добавлять не нужно: источник файлов уже учтён.
+   Пример phpThumbOn требует установленного phpThumbOn; MultiPic работает и без него. *}
+{set $photos = $_modx->runSnippet('MultiPic', ['value'=>$child.gallery, 'output'=>'array'])}
+{foreach $photos as $photo}
+    {set $img_child = 'phpthumbon' | snippet : ['input'=>$photo.url, 'options'=>'w=1600&q=90']}
+    <img src="{$img_child | escape}" alt="{$photo.alt | escape}" loading="lazy">
+{/foreach}
+TPL
 ]
 ];

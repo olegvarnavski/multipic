@@ -1,6 +1,7 @@
 """Exercise actual manager cookies, TV rendering and connector across HTTP requests."""
 import html, http.cookiejar, json, re, struct, sys, urllib.request, urllib.parse, urllib.error, zlib
 base = sys.argv[1].rstrip('/')
+manager_path = sys.argv[3] if len(sys.argv) > 3 else '/manager/'
 jar = http.cookiejar.CookieJar()
 client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 def response(req):
@@ -15,10 +16,13 @@ def post(path, fields):
     return json.loads(response(req))
 r = post('/connectors/index.php', dict(action='security/login', username='multipic-ci', password='multipic-ci-only-admin', login_context='mgr'))
 assert r['success'], r
-page = get('/manager/?a=resource/update&id=' + sys.argv[2])
+page = get(manager_path + '?a=resource/update&id=' + sys.argv[2])
 matches = re.findall(r'data-multipic-config="([^"]+)"', page)
 assert matches, 'Gallery missing from real manager page: ' + '\n'.join(line for line in page.splitlines() if any(word in line.lower() for word in ['multipic', 'error', 'exception']))[:4000]
 cfg = json.loads(html.unescape(matches[0]))
+assert cfg['maxPixels'] == 32000000, cfg
+assert cfg['maxBytes'] == 20971520, cfg
+assert 'uploadBytes' in cfg, cfg
 r = post(cfg['connector'], dict(action='heartbeat', token=cfg['token'], HTTP_MODAUTH=cfg['auth']))
 assert r['success'], r
 print('PASS: real manager session survives TV render and separate connector request')
@@ -44,7 +48,7 @@ fields.update(action='resource/update', HTTP_MODAUTH=cfg['auth'], tvs=1, multipi
 fields[cfg['field']] = json.dumps(gallery)
 r = post('/connectors/index.php', fields)
 assert r['success'], r
-reloaded = get('/manager/?a=resource/update&id=' + sys.argv[2])
+reloaded = get(manager_path + '?a=resource/update&id=' + sys.argv[2])
 new_cfg = json.loads(html.unescape(re.findall(r'data-multipic-config="([^"]+)"', reloaded)[0]))
 assert new_cfg['data']['items'][0]['file'] == item['file']
 r = post(cfg['connector'], dict(action='heartbeat', token=cfg['token'], HTTP_MODAUTH=cfg['auth']))
@@ -56,3 +60,15 @@ closed_cfg = json.loads(html.unescape(re.findall(r'data-multipic-config="([^"]+)
 r = post(closed_cfg['connector'], dict(action='heartbeat', token=closed_cfg['token'], HTTP_MODAUTH=closed_cfg['auth']))
 assert r['success'], r
 print('PASS: gallery capability persists when PHP session is closed before TV rendering')
+
+# Reject a too-large pixel header before GD allocation and return the requested plain message.
+large_png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 9000, 4000, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(b'\x00\xff\x00\x00')) + chunk(b'IEND', b'')
+req = urllib.request.Request(base + cfg['connector'], b''.join(parts).replace(png, large_png), {'Content-Type': 'multipart/form-data; boundary=' + boundary})
+try:
+    client.open(req)
+    raise AssertionError('Excessive pixel count accepted')
+except urllib.error.HTTPError as error:
+    result = json.loads(error.read())
+    assert result['code'] == 'multipic_pixels', result
+    assert result['message'] == 'Файл слишком большого размера. Выберите другой.', result
+print('PASS: friendly oversize message and custom manager URL')

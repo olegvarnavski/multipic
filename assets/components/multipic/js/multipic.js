@@ -9,6 +9,13 @@
         const scale=edge>0?Math.min(1,edge/Math.max(width,height)):1;
         return {width:Math.max(1,Math.round(width*scale)),height:Math.max(1,Math.round(height*scale))};
     }
+    function limitsText(cfg) {
+        if(!Number.isFinite(cfg.maxBytes)||!Number.isFinite(cfg.maxPixels))return '';
+        const number=n=>n.toLocaleString('ru-RU',{maximumFractionDigits:2});
+        let text='Файл: до '+number(cfg.maxBytes/1048576)+' МБ. Изображение: до '+number(cfg.maxPixels/1000000)+' Мп ('+number(cfg.maxPixels)+' пикселей, ширина × высота).';
+        if(Number.isFinite(cfg.uploadBytes)&&cfg.uploadBytes<cfg.maxBytes)text+=' С компьютера: до '+number(cfg.uploadBytes/1048576)+' МБ.';
+        return text;
+    }
     async function prepareImage(file,edge,quality,env=root) {
         if(!(edge>0))return file;
         const url=env.URL.createObjectURL(file);
@@ -27,7 +34,7 @@
             }finally{canvas.width=1;canvas.height=1;}
         }finally{env.URL.revokeObjectURL(url);}
     }
-    if (typeof module !== 'undefined') module.exports={natural,select,fitImage,prepareImage};
+    if (typeof module !== 'undefined') module.exports={natural,select,fitImage,prepareImage,limitsText};
     if (!root.document || root.MultiPic) return;
     const instances=new Set();
     const icons={eye:'Показано',hidden:'Скрыто',edit:'✎',remove:'×',drag:'⠿'};
@@ -68,7 +75,7 @@
             this.node.addEventListener('dragleave',()=>this.node.classList.remove('mp-over'));
             this.node.addEventListener('drop',e=>{if(e.dataTransfer.files.length){e.preventDefault();this.node.classList.remove('mp-over');this.addFiles([...e.dataTransfer.files]);}});
             this.render(); this.registerToken();
-            this.timer=setInterval(()=>{if(!document.contains(this.node)){clearInterval(this.timer);instances.delete(this);tokens.delete(this.cfg.token);const f=document.querySelector('input[name="multipic_tokens"]');if(f)f.value=JSON.stringify([...tokens]);return;}this.request('heartbeat').then(()=>{if(this.sessionError){this.sessionError='';this.render();}}).catch(e=>{this.sessionError=e.message;this.render();});},60000);
+            this.timer=setInterval(()=>{if(!document.contains(this.node)){clearInterval(this.timer);if(this.browser){if(this.browser.win&&this.browser.win.destroy)this.browser.win.destroy();if(this.browser.destroy)this.browser.destroy();this.browser=null;}instances.delete(this);tokens.delete(this.cfg.token);const f=document.querySelector('input[name="multipic_tokens"]');if(f)f.value=JSON.stringify([...tokens]);return;}this.request('heartbeat').then(()=>{if(this.sessionError){this.sessionError='';this.render();}}).catch(e=>{this.sessionError=e.message;this.render();});},60000);
             instances.add(this);installFormHooks();
         }
         registerToken() {
@@ -141,14 +148,20 @@
         }
         importFile() {
             if(!root.MODx||!MODx.load){this.notice='Файловый менеджер MODX недоступен';this.render();return;}
-            const browser=MODx.load({xtype:'modx-browser',source:this.cfg.source,allowedFileTypes:'jpg,jpeg,png,webp',multiple:false,
+            if(this.browser && this.browser.win && !this.browser.win.isDestroyed){this.browser.show();return;}
+            const browser=MODx.load({xtype:'modx-browser',source:this.cfg.source,allowedFileTypes:'jpg,jpeg,png,webp',multiple:true,
                 listeners:{select:{fn:data=>{
                     const view=browser.win&&browser.win.view;
                     const records=view&&view.getSelectedRecords?view.getSelectedRecords():[];
                     const files=records.length?records.map(r=>r.data):[data];
-                    for(const f of files)if(f&&!f.disabled)this.queue.push({_path:f.relativeUrl||f.url,_url:f.url,name:f.name||f.relativeUrl||'image'});
+                    for(const f of files)if(f&&!f.disabled){
+                        const originalUrl=f.relativeUrl&&this.cfg.sourceUrl?this.cfg.sourceUrl+f.relativeUrl.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/'):(f.fullRelativeUrl||f.url);
+                        this.queue.push({_path:f.relativeUrl||f.url,_url:originalUrl,name:f.name||f.relativeUrl||'image'});
+                    }
                     this.pump();
                 },scope:this}}});
+            if(!browser || typeof browser.show!=='function'){this.notice='Не удалось открыть файловый браузер. Обновите страницу менеджера.';this.render();return;}
+            this.browser=browser;
             const view=browser.win&&browser.win.view;
             if(view){view.multiSelect=true;view.singleSelect=false;}
             browser.show();
@@ -194,6 +207,7 @@
             if(this.sessionError)this.node.append(el('div','mp-notice',this.sessionError));
             if(this.notice)this.node.append(el('div','mp-notice',this.notice));
             this.node.append(el('div','mp-help','Перетащите миниатюры для сортировки. На сервере: Ctrl/⌘ или Shift для выбора нескольких файлов. Изменения сохраняются вместе с ресурсом.'));
+            const limits=limitsText(this.cfg);if(limits)this.node.append(el('div','mp-help mp-limits',limits));
         }
         moveBefore(from,to){if(this.dropMarker)this.dropMarker.remove();if(from===to)return;const a=this.items.findIndex(x=>x.id===from);let b=to?this.items.findIndex(x=>x.id===to):this.items.length;if(a<0||b<0)return;const [item]=this.items.splice(a,1);if(a<b)b--;this.items.splice(b,0,item);this.save();this.render();}
         move(from,to){if(from===to)return;const a=this.items.findIndex(x=>x.id===from),b=this.items.findIndex(x=>x.id===to);if(a<0||b<0)return;const [item]=this.items.splice(a,1);this.items.splice(b,0,item);this.save();this.render();}

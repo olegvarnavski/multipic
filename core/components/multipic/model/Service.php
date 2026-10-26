@@ -165,7 +165,7 @@ final class Service
             'edge' => max(0, (int)$this->modx->getOption('multipic.max_edge', null, 2560)),
             'quality' => max(1, min(100, (int)$this->modx->getOption('multipic.quality', null, 95))),
             'max_bytes' => (int)$this->modx->getOption('multipic.max_bytes', null, 20971520),
-            'max_pixels' => (int)$this->modx->getOption('multipic.max_pixels', null, 24000000)];
+            'max_pixels' => (int)$this->modx->getOption('multipic.max_pixels', null, 32000000)];
     }
     public function safeDirectory(string $base, string $relative): string
     {
@@ -183,7 +183,7 @@ final class Service
     public function upload(string $input, string $name, array $cfg, string $token, string $fallback): array
     {
         if (!extension_loaded('gd')) { throw new \RuntimeException('Нужна библиотека PHP GD'); }
-        if (!is_file($input) || filesize($input) > $cfg['max_bytes']) { throw new \RuntimeException('Превышен размер файла'); }
+        if (!is_file($input) || filesize($input) > $cfg['max_bytes']) { throw new \RuntimeException('Превышен размер файла',1003); }
         $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($input);
         $types = ['image/jpeg' => ['jpg','imagecreatefromjpeg','imagejpeg'], 'image/png' => ['png','imagecreatefrompng','imagepng'], 'image/webp' => ['webp','imagecreatefromwebp','imagewebp']];
         if (!isset($types[$mime])) { throw new \RuntimeException('Допустимы JPG, PNG и WebP'); }

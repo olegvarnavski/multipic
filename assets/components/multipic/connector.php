@@ -31,6 +31,7 @@ try {
         $fallback=isset($res) ? (string)$res->get('pagetitle') : 'gallery';
         if ($action === 'upload') {
             $file=$_FILES['file'] ?? null;
+            if($file && in_array($file['error'],[UPLOAD_ERR_INI_SIZE,UPLOAD_ERR_FORM_SIZE],true))throw new RuntimeException('Превышен размер загрузки PHP',1003);
             if (!$file || $file['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) { throw new RuntimeException('Файл не получен. Проверьте ограничения PHP.'); }
             $result=$service->upload($file['tmp_name'],$file['name'],$cfg,$token,$fallback);
         } else {
@@ -47,6 +48,6 @@ try {
     if(isset($service))$service->log('connector',$context);
     else $modx->log(modX::LOG_LEVEL_ERROR,'[MultiPic connector] '.json_encode($context));
     http_response_code(400);
-    $message=$e instanceof RuntimeException?$e->getMessage():'Не удалось выполнить запрос. Проверьте журнал MODX.';
-    echo json_encode(['success'=>false,'message'=>$message,'code'=>$e->getCode()===1001?'multipic_memory':($e->getCode()===1002?'multipic_pixels':'multipic_request_failed'),'request'=>$requestId],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+    $message=in_array($e->getCode(),[1001,1002,1003],true)?'Файл слишком большого размера. Выберите другой.':($e instanceof RuntimeException?$e->getMessage():'Не удалось выполнить запрос. Проверьте журнал MODX.');
+    echo json_encode(['success'=>false,'message'=>$message,'code'=>$e->getCode()===1001?'multipic_memory':($e->getCode()===1002?'multipic_pixels':($e->getCode()===1003?'multipic_size':'multipic_request_failed')),'request'=>$requestId],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
 }

@@ -6,14 +6,18 @@ const {window}=parseHTML('<html><body><form id="modx-resource-form"><input id="t
 const {document}=window;let dirty=0,alerts=0,submitted=0;const handlers={};
 const panel={on:(event,callback)=>handlers[event]=callback};const win={doSubmit:()=>submitted++};
 window.Ext={getCmp:id=>id==='modx-panel-resource'?panel:id==='migx-window'?win:null,Msg:{alert:()=>alerts++}};
-let browserConfig;const selectedFiles=[];window.MODx={fireResourceFormChange:()=>dirty++,load:cfg=>{browserConfig=cfg;return {show(){},win:{view:{getSelectedRecords:()=>selectedFiles.map(data=>({data}))}}};}};
+let browserConfig,browserCreated=0,browserShown=0;const selectedFiles=[];window.MODx={browserOpen:true,fireResourceFormChange:()=>dirty++,load:cfg=>{
+ assert.equal(cfg.multiple,true,'existing MODX browser must not block a new MultiPic browser');
+ browserCreated++;browserConfig=cfg;
+ return {show(){browserShown++;},destroy(){},win:{isDestroyed:false,view:{getSelectedRecords:()=>selectedFiles.map(data=>({data}))}}};
+}};
 const requests=[];
-window.fetch=(url,options)=>url==='http://fixture.local/large.jpg'?Promise.resolve({ok:true,blob:async()=>new Blob(['source'],{type:'image/jpeg'})}):new Promise(resolve=>requests.push({form:options.body,resolve}));
+window.fetch=(url,options)=>url==='http://fixture.local/uploads/large.jpg'?Promise.resolve({ok:true,blob:async()=>new Blob(['source'],{type:'image/jpeg'})}):new Promise(resolve=>requests.push({form:options.body,resolve}));
 const nativeCreate=document.createElement.bind(document);
 document.createElement=(tag)=>{const n=nativeCreate(tag);if(tag==='canvas'){n.getContext=()=>({drawImage(){}});n.toBlob=(cb,type)=>cb(new Blob(['reduced'],{type}));}return n;};
 window.FormData=globalThis.FormData;window.setInterval=()=>1;window.clearInterval=()=>{};
 window.alert=()=>alerts++;window.console=console;
-function configure(id,field){const node=document.getElementById(id);node.dataset.multipicConfig=JSON.stringify({field,token:'a'.repeat(64),data:{type:'multipic',version:1,items:[]},max:4,edge:2560,quality:95,source:1,connector:'/connector',auth:'test'});}
+function configure(id,field){const node=document.getElementById(id);node.dataset.multipicConfig=JSON.stringify({field,token:'a'.repeat(64),data:{type:'multipic',version:1,items:[]},max:4,maxBytes:20971520,maxPixels:32000000,uploadBytes:2097152,edge:2560,quality:95,source:1,sourceUrl:'/uploads/',connector:'/connector',auth:'test'});}
 configure('editor','tv7');configure('nested','tvnested');
 const runtime={document,Ext:window.Ext,MODx:window.MODx,File,FormData:globalThis.FormData,fetch:window.fetch,URL:class extends URL {static createObjectURL(){return 'blob:test';}static revokeObjectURL(){}},Image:class {constructor(){this.naturalWidth=6000;this.naturalHeight=4000;}set src(v){Promise.resolve().then(()=>this.onload());}},Event:window.Event,MutationObserver:window.MutationObserver,setInterval:window.setInterval,clearInterval:window.clearInterval,addEventListener:window.addEventListener.bind(window),alert:window.alert,console};
 runtime.window=runtime;
@@ -25,6 +29,7 @@ function result(file){return {id:file,file,url:'/images/'+file+'.png',thumb:'/th
 function finish(req,item){req.resolve({ok:true,json:async()=>({success:true,object:item})});}
 const tick=()=>new Promise(r=>setImmediate(r));
 (async()=>{
+ assert.ok(document.querySelector('#editor .mp-limits').textContent.includes('32 Мп'));
  upload('editor',['010.png','002.png']);assert.equal(requests.length,2);
  assert.equal(requests[0].form.get('file').name,'002.png');
  assert.equal(handlers.beforeSubmit({form:{baseParams:{}}}),false);
@@ -39,6 +44,8 @@ const tick=()=>new Promise(r=>setImmediate(r));
  assert.equal(JSON.parse(document.getElementById('tv7').value).items.length,2);assert.ok(dirty>=4);
  selectedFiles.push({name:'server-a.png',relativeUrl:'server-a.png'},{name:'server-b.png',relativeUrl:'server-b.png'});
  document.querySelectorAll('#editor .mp-toolbar button')[1].click();
+ const initialCreated=browserCreated;document.querySelectorAll('#editor .mp-toolbar button')[1].click();
+ assert.equal(browserCreated,initialCreated,'repeat opening must reuse the live browser');assert.equal(browserShown,2);
  browserConfig.listeners.select.fn(selectedFiles[0]);assert.equal(requests.length,5);
  finish(requests[3],result('server-a'));finish(requests[4],result('server-b'));await tick();
  assert.equal(JSON.parse(document.getElementById('tv7').value).items.length,4);
@@ -54,12 +61,12 @@ const tick=()=>new Promise(r=>setImmediate(r));
  assert.equal(requests[6].form.get('file').name,'large.png');finish(requests[6],result('large'));await tick();
  const nestedStored=JSON.parse(document.getElementById('tvnested').value);assert.equal(nestedStored.items.length,2);
  assert.ok(!('_prepared' in nestedStored.items[1]));
- runtime.location={href:'http://fixture.local/manager/',origin:'http://fixture.local'};
+ runtime.location={href:'http://fixture.local/private-control/',origin:'http://fixture.local'};
  selectedFiles.splice(0,selectedFiles.length,{name:'large.jpg',relativeUrl:'large.jpg',url:'http://fixture.local/large.jpg'});
  document.querySelectorAll('#nested .mp-toolbar button')[1].click();browserConfig.listeners.select.fn(selectedFiles[0]);
  assert.equal(requests.length,8);requests[7].resolve({ok:false,json:async()=>({success:false,code:'multipic_memory',message:'memory'})});
  await tick();assert.equal(requests.length,9);assert.equal(requests[8].form.get('action'),'upload');finish(requests[8],result('server-large'));await tick();
- selectedFiles.splice(0,selectedFiles.length,{name:'foreign.jpg',relativeUrl:'foreign.jpg',url:'https://other.invalid/foreign.jpg'});
+ selectedFiles.splice(0,selectedFiles.length,{name:'foreign.jpg',url:'https://other.invalid/foreign.jpg'});
  document.querySelectorAll('#nested .mp-toolbar button')[1].click();browserConfig.listeners.select.fn(selectedFiles[0]);
  requests[9].resolve({ok:false,json:async()=>({success:false,code:'multipic_memory',message:'memory'})});
  await tick();assert.equal(requests.length,10,'foreign origin must not receive a fallback fetch');

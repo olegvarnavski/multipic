@@ -57,7 +57,7 @@ jobs:
           MULTIPIC_TEST_SITE: '1'
         run: |
           php _build/build.transport.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
-          cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.1.5-alpha.transport.zip dist/
+          cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.1.6-alpha.transport.zip dist/
           php tests/upgrade-seed.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
           php tests/integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
           php tests/render-integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
@@ -71,13 +71,13 @@ jobs:
           php -S 127.0.0.1:8085 -t "$site" >/tmp/multipic-http.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" || true; cat /tmp/multipic-http.log' EXIT
-          for attempt in $(seq 1 30); do curl -s http://127.0.0.1:8085/manager/ >/dev/null && break; sleep 1; done
-          python3 tests/http-upload.py http://127.0.0.1:8085 "$resource_id"
+          for attempt in $(seq 1 30); do curl -s http://127.0.0.1:8085/control-panel-ci/ >/dev/null && break; sleep 1; done
+          python3 tests/http-upload.py http://127.0.0.1:8085 "$resource_id" /control-panel-ci/
       - name: Keep tested installer
         uses: actions/upload-artifact@v4
         with:
           name: multipic-php74-modx-${{ matrix.modx }}
-          path: dist/multipic-0.1.5-alpha.transport.zip
+          path: dist/multipic-0.1.6-alpha.transport.zip
 
   php8-unit:
     runs-on: ubuntu-22.04

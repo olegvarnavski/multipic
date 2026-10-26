@@ -1,5 +1,5 @@
 <?php
-/** No MODX/DB needed. Process the reported 6000x4000 dimensions with a bounded PHP worker. */
+/** No MODX/DB needed. Process the reported 6000x4061 dimensions with a bounded PHP worker. */
 require __DIR__.'/../core/components/multipic/model/Service.php';
 define('MODX_CORE_PATH',__DIR__.'/');
 class LargeStatement {
@@ -17,10 +17,12 @@ class LargeModx {
 $base=sys_get_temp_dir().'/multipic-large-'.bin2hex(random_bytes(5)).'/';mkdir($base);
 function removeLargeFixture($dir){foreach(scandir($dir) as $n){if($n==='.'||$n==='..')continue;$p=$dir.'/'.$n;if(is_dir($p))removeLargeFixture($p);else unlink($p);}rmdir($dir);}
 try {
- $input=$base.'source.jpg';$im=imagecreatetruecolor(6000,4000);imagejpeg($im,$input,95);imagedestroy($im);unset($im);
+ $input=$base.'source.jpg';$im=imagecreatetruecolor(6000,4061);imagejpeg($im,$input,95);imagedestroy($im);unset($im);
  $service=new MultiPic\Service(new LargeModx());
- $cfg=['base'=>$base,'folder'=>'multipic/','base_url'=>'/','max_bytes'=>20971520,'max_pixels'=>24000000,'edge'=>2560,'quality'=>95,'source'=>1,'max'=>30];
+ $cfg=['base'=>$base,'folder'=>'multipic/','base_url'=>'/uploads/','max_bytes'=>20971520,'max_pixels'=>32000000,'edge'=>2560,'quality'=>95,'source'=>1,'max'=>30];
  $item=$service->upload($input,'source.jpg',$cfg,str_repeat('a',64),'test');
- if($item['width']!==2560 || $item['height']!==1707)throw new RuntimeException('Large image dimensions');
- echo "PASS: real GD processing of 6000x4000 JPEG under ".ini_get('memory_limit')." memory_limit\n";
+ if($item['width']!==2560 || $item['height']!==1733)throw new RuntimeException('Large image dimensions');
+ if(strpos($item['url'],'/uploads/multipic/files/')!==0)throw new RuntimeException('Media-source URL prefix missing');
+ echo "PASS: source-prefixed URL is complete and needs no additional path in MIGX\n";
+ echo "PASS: real GD processing of 6000x4061 JPEG under ".ini_get('memory_limit')." memory_limit\n";
 }finally{removeLargeFixture(rtrim($base,'/'));}
