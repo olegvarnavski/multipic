@@ -14,8 +14,8 @@ def get(path):
 def post(path, fields):
     req = urllib.request.Request(base + path, urllib.parse.urlencode(fields).encode())
     return json.loads(response(req))
-r = post('/connectors/index.php?action=security/login', dict(username='multipic-ci', password='multipic-ci-only-admin', login_context='mgr'))
-assert r['success'], r
+login = json.loads(get('/multipic-ci-login.php'))
+assert login['success'], login
 page = get(manager_path + '?a=resource/update&id=' + sys.argv[2])
 matches = re.findall(r'data-multipic-config="([^"]+)"', page)
 assert matches, 'Gallery missing from real manager page: ' + '\n'.join(line for line in page.splitlines() if any(word in line.lower() for word in ['multipic', 'error', 'exception']))[:4000]

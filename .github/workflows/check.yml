@@ -68,6 +68,7 @@ jobs:
         run: |
           site=/tmp/multipic-site/modx-${{ matrix.modx }}-pl
           resource_id=$(php tests/http-fixture.php "$site/config.core.php")
+          cp tests/http-login.php "$site/multipic-ci-login.php"
           cp tests/http-closed-session.php "$site/multipic-ci-closed.php"
           php -d upload_max_filesize=1M -d post_max_size=8M -S 127.0.0.1:8085 -t "$site" >/tmp/multipic-http.log 2>&1 &
           server_pid=$!
@@ -155,6 +156,7 @@ jobs:
         run: |
           site=/tmp/multipic-site/modx-${{ matrix.modx }}-pl
           resource_id=$(php tests/http-fixture.php "$site/config.core.php")
+          cp tests/http-login.php "$site/multipic-ci-login.php"
           cp tests/http-closed-session.php "$site/multipic-ci-closed.php"
           php -d upload_max_filesize=1M -d post_max_size=8M -S 127.0.0.1:8085 -t "$site" >/tmp/multipic-http.log 2>&1 &
           server_pid=$!
