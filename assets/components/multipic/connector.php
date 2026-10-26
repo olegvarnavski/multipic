@@ -1,6 +1,13 @@
 <?php
 require_once dirname(__DIR__,3).'/config.core.php';
 require_once MODX_CORE_PATH.'config/'.MODX_CONFIG_KEY.'.inc.php';
+// config.core.php is already loaded above, so MODX 3's connector front
+// controller skips its normal anonymous security/login exception. Preserve
+// that exception for the login request; all other requests still require the
+// manager session and MODAUTH checks below.
+if (strtolower((string)($_POST['action'] ?? $_REQUEST['action'] ?? '')) === 'security/login' && !defined('MODX_REQP')) {
+    define('MODX_REQP', false);
+}
 require_once MODX_CONNECTORS_PATH.'index.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
