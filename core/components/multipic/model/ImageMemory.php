@@ -10,7 +10,8 @@ final class ImageMemory
         $thumbScale=min(1,240/max(1,$width*$scale,$height*$scale));
         $thumb=max(1,(int)round($width*$scale*$thumbScale))*max(1,(int)round($height*$scale*$thumbScale));
         // Includes allocation overhead, codec workspace and a fixed safety reserve.
-        return (int)ceil(max($width*$height*5+$out*6,$rotate?$width*$height*10:0,$out*6+$thumb*6)+8*1048576);
+        $peak=max($width*$height*5+$out*6,$rotate?$width*$height*10:0,$out*6+$thumb*6)+8*1048576;
+        return !is_finite((float)$peak) || $peak>=PHP_INT_MAX ? PHP_INT_MAX : (int)ceil($peak);
     }
     public static function limit(string $value): int
     {

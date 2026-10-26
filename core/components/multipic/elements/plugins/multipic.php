@@ -9,8 +9,8 @@ if (in_array($event, ['OnTVInputRenderList','OnTVInputPropertiesList'], true)) {
 if($event==='OnDocFormPrerender') {
     if($modx->getCount('modTemplateVar',['type'=>'multipic'])) {
         $assets=$modx->getOption('assets_url').'components/multipic/';
-        $modx->regClientCSS($assets.'css/multipic.css?multipic=016');
-        $modx->regClientStartupScript($assets.'js/multipic.js?multipic=016');
+        $modx->regClientCSS($assets.'css/multipic.css?multipic=017');
+        $modx->regClientStartupScript($assets.'js/multipic.js?multipic=017');
     }
     return;
 }

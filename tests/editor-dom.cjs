@@ -14,7 +14,7 @@ let browserConfig,browserCreated=0,browserShown=0;const selectedFiles=[];window.
 const requests=[];
 window.fetch=(url,options)=>url==='http://fixture.local/uploads/large.jpg'?Promise.resolve({ok:true,blob:async()=>new Blob(['source'],{type:'image/jpeg'})}):new Promise(resolve=>requests.push({form:options.body,resolve}));
 const nativeCreate=document.createElement.bind(document);
-document.createElement=(tag)=>{const n=nativeCreate(tag);if(tag==='canvas'){n.getContext=()=>({drawImage(){}});n.toBlob=(cb,type)=>cb(new Blob(['reduced'],{type}));}return n;};
+document.createElement=(tag)=>{const n=nativeCreate(tag);if(tag==='dialog'){n.showModal=()=>{n.open=true;};n.close=()=>n.dispatchEvent(new window.Event('close'));}if(tag==='canvas'){n.getContext=()=>({drawImage(){}});n.toBlob=(cb,type)=>cb(new Blob(['reduced'],{type}));}return n;};
 window.FormData=globalThis.FormData;window.setInterval=()=>1;window.clearInterval=()=>{};
 window.alert=()=>alerts++;window.console=console;
 function configure(id,field){const node=document.getElementById(id);node.dataset.multipicConfig=JSON.stringify({field,token:'a'.repeat(64),data:{type:'multipic',version:1,items:[]},max:4,maxBytes:20971520,maxPixels:32000000,uploadBytes:2097152,edge:2560,quality:95,source:1,sourceUrl:'/uploads/',connector:'/connector',auth:'test'});}
@@ -29,7 +29,8 @@ function result(file){return {id:file,file,url:'/images/'+file+'.png',thumb:'/th
 function finish(req,item){req.resolve({ok:true,json:async()=>({success:true,object:item})});}
 const tick=()=>new Promise(r=>setImmediate(r));
 (async()=>{
- assert.ok(document.querySelector('#editor .mp-limits').textContent.includes('32 Мп'));
+ assert.ok(document.querySelector('#editor .mp-limits').textContent.includes('Максимальный размер файла'));
+ assert.ok(!document.querySelector('#editor .mp-limits').textContent.includes('Мп'));
  upload('editor',['010.png','002.png']);assert.equal(requests.length,2);
  assert.equal(requests[0].form.get('file').name,'002.png');
  assert.equal(handlers.beforeSubmit({form:{baseParams:{}}}),false);
@@ -71,6 +72,10 @@ const tick=()=>new Promise(r=>setImmediate(r));
  requests[9].resolve({ok:false,json:async()=>({success:false,code:'multipic_memory',message:'memory'})});
  await tick();assert.equal(requests.length,10,'foreign origin must not receive a fallback fetch');
  assert.equal(JSON.parse(document.getElementById('tvnested').value).items.length,3);
+ document.querySelector('#editor .mp-pic img').click();
+ const preview=document.querySelector('dialog.mp-preview');assert.ok(preview);
+ const close=preview.querySelector('.mp-preview-close');assert.equal(close.textContent,'×');assert.equal(close.getAttribute('aria-label'),'Закрыть просмотр');close.click();assert.equal(document.querySelector('dialog.mp-preview'),null);
+ console.log('PASS: preview close cross and dialog disposal');
  console.log('PASS: same-origin server fallback and refusal to fetch cross-origin source');
  console.log('PASS: memory error triggers one browser resize/upload retry without storing temporary blobs');
  console.log('PASS: multiple server selections and drag insertion placeholder');

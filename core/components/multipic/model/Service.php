@@ -164,8 +164,7 @@ final class Service
             'max' => max(1, min(1000, (int)(!empty($props['maxFiles']) ? $props['maxFiles'] : $this->modx->getOption('multipic.max_files', null, 30)))),
             'edge' => max(0, (int)$this->modx->getOption('multipic.max_edge', null, 2560)),
             'quality' => max(1, min(100, (int)$this->modx->getOption('multipic.quality', null, 95))),
-            'max_bytes' => (int)$this->modx->getOption('multipic.max_bytes', null, 20971520),
-            'max_pixels' => (int)$this->modx->getOption('multipic.max_pixels', null, 32000000)];
+            'max_bytes' => (int)$this->modx->getOption('multipic.max_bytes', null, 20971520)];
     }
     public function safeDirectory(string $base, string $relative): string
     {
@@ -193,7 +192,7 @@ final class Service
         if ($ext==='jpg' && !function_exists('exif_read_data')) { throw new \RuntimeException('Для JPEG требуется PHP EXIF'); }
         if (!function_exists($read) || !function_exists($write)) { throw new \RuntimeException('Формат не поддерживается библиотекой GD'); }
         $info = @getimagesize($input);
-        if (!$info || $info[0] * $info[1] > $cfg['max_pixels']) { throw new \RuntimeException('Изображение слишком большое по числу пикселей',1002); }
+        if (!$info || $info[0]<1 || $info[1]<1) { throw new \RuntimeException('Не удалось прочитать размеры изображения'); }
         // GD cannot preserve animation: reject rather than silently flatten it.
         $bytes = file_get_contents($input);
         if (($ext === 'png' && strpos($bytes, 'acTL') !== false) || ($ext === 'webp' && strpos($bytes, 'ANIM') !== false)) { throw new \RuntimeException('Анимация пока не поддерживается'); }
@@ -212,7 +211,11 @@ final class Service
         $orientation=1;
         if($ext==='jpg'){$exif=@exif_read_data($input);$orientation=(int)($exif['Orientation'] ?? 1);unset($exif);}
         $limit=ImageMemory::limit((string)ini_get('memory_limit'));
-        $needed=memory_get_usage(true)+ImageMemory::estimate($info[0],$info[1],$cfg['edge'],in_array($orientation,[3,5,6,7,8],true));
+        // An unlimited PHP worker still must not allocate unbounded GD buffers.
+        if($limit<=0)$limit=256*1048576;
+        $estimate=ImageMemory::estimate($info[0],$info[1],$cfg['edge'],in_array($orientation,[3,5,6,7,8],true));
+        if($estimate>=PHP_INT_MAX-memory_get_usage(true))throw new \RuntimeException('Изображение требует слишком много памяти для обработки',1001);
+        $needed=memory_get_usage(true)+$estimate;
         if($limit>0 && $needed>$limit)throw new \RuntimeException('Недостаточно памяти PHP для обработки. Лимит '.(int)ceil($limit/1048576).' МБ; требуется примерно '.(int)ceil($needed/1048576).' МБ. Загрузите изображение меньшего размера.',1001);
         $id=bin2hex(random_bytes(16));$sub=substr($id,0,2).'/'.substr($id,2,2).'/';
         $filename=$this->slug($name,$fallback).'-'.$id.'.'.$ext;

@@ -1,11 +1,11 @@
 const assert=require('node:assert/strict');
 const {File}=require('node:buffer');
 const {fitImage,prepareImage,limitsText}=require('../assets/components/multipic/js/multipic.js');
-assert.ok(limitsText({maxBytes:20971520,maxPixels:32000000,uploadBytes:2097152,edge:2560}).includes('32 Мп'));
-assert.ok(limitsText({maxBytes:20971520,maxPixels:32000000,uploadBytes:2097152,edge:2560}).includes('С компьютера: до 2 МБ'));
+assert.equal(limitsText({maxBytes:20971520}), 'Максимальный размер файла — до 20 МБ.');
+assert.ok(limitsText({maxBytes:20971520,uploadBytes:2097152}).includes('С компьютера: до 2 МБ'));
 assert.equal(limitsText({}), '');
-assert.ok(!limitsText({maxBytes:20971520,maxPixels:32000000,edge:2560}).includes('2560'));
-assert.ok(!limitsText({maxBytes:20971520,maxPixels:32000000,edge:2560}).includes('После'));
+assert.ok(!limitsText({maxBytes:20971520,maxPixels:32000000,edge:2560}).includes('пиксел'));
+assert.ok(!limitsText({maxBytes:20971520,edge:2560}).includes('2560'));
 assert.deepEqual(fitImage(6000,4000,2560),{width:2560,height:1707});
 assert.deepEqual(fitImage(4000,6000,2560),{width:1707,height:2560});
 assert.deepEqual(fitImage(100,50,2560),{width:100,height:50});

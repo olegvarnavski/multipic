@@ -5,13 +5,9 @@ if ($options[xPDOTransport::PACKAGE_ACTION] === xPDOTransport::ACTION_UNINSTALL)
 require_once MODX_CORE_PATH.'components/multipic/model/Service.php';
 try {
     (new \MultiPic\Service($modx))->install();
-    // Raise the former package default on upgrade; preserve other custom limits.
+    // Pixel quota was removed; memory estimation remains independent of image dimensions quotas.
     $setting=$modx->getObject('modSystemSetting','multipic.max_pixels');
-    if($setting && (int)$setting->get('value')===24000000){
-        $setting->set('value',32000000);
-        if(!$setting->save())throw new RuntimeException('Не удалось обновить лимит изображения');
-        $modx->setOption('multipic.max_pixels',32000000);
-    }
+    if($setting && !$setting->remove())throw new RuntimeException('Не удалось удалить устаревшую настройку пикселей');
     return true;
 }
 catch (Throwable $e) { $modx->log(modX::LOG_LEVEL_ERROR,'[MultiPic install] '.$e->getMessage()); return false; }

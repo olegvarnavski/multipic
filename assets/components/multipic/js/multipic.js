@@ -10,9 +10,9 @@
         return {width:Math.max(1,Math.round(width*scale)),height:Math.max(1,Math.round(height*scale))};
     }
     function limitsText(cfg) {
-        if(!Number.isFinite(cfg.maxBytes)||!Number.isFinite(cfg.maxPixels))return '';
+        if(!Number.isFinite(cfg.maxBytes))return '';
         const number=n=>n.toLocaleString('ru-RU',{maximumFractionDigits:2});
-        let text='Файл: до '+number(cfg.maxBytes/1048576)+' МБ. Изображение: до '+number(cfg.maxPixels/1000000)+' Мп ('+number(cfg.maxPixels)+' пикселей, ширина × высота).';
+        let text='Максимальный размер файла — до '+number(cfg.maxBytes/1048576)+' МБ.';
         if(Number.isFinite(cfg.uploadBytes)&&cfg.uploadBytes<cfg.maxBytes)text+=' С компьютера: до '+number(cfg.uploadBytes/1048576)+' МБ.';
         return text;
     }
@@ -123,7 +123,7 @@
                 let uploaded;
                 try{uploaded=await this.request(item._prepared?'upload':(item._path?'import':'upload'),item._prepared?{file:item._prepared}:(item._path?{path:item._path}:{file:item._file}));}
                 catch(error){
-                    if(item._prepared || !['multipic_memory','multipic_pixels'].includes(error.code) || !(this.cfg.edge>0))throw error;
+                    if(item._prepared || error.code!=='multipic_memory' || !(this.cfg.edge>0))throw error;
                     let original=item._file;
                     if(!original && item._url && root.location){
                         const url=new URL(item._url,root.location.href);
@@ -211,7 +211,7 @@
         }
         moveBefore(from,to){if(this.dropMarker)this.dropMarker.remove();if(from===to)return;const a=this.items.findIndex(x=>x.id===from);let b=to?this.items.findIndex(x=>x.id===to):this.items.length;if(a<0||b<0)return;const [item]=this.items.splice(a,1);if(a<b)b--;this.items.splice(b,0,item);this.save();this.render();}
         move(from,to){if(from===to)return;const a=this.items.findIndex(x=>x.id===from),b=this.items.findIndex(x=>x.id===to);if(a<0||b<0)return;const [item]=this.items.splice(a,1);this.items.splice(b,0,item);this.save();this.render();}
-        preview(item){const dialog=el('dialog','mp-preview');const image=el('img');image.src=item.url;image.alt=item.alt||'';dialog.append(button('Закрыть',()=>dialog.close()),image);dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();}
+        preview(item){const dialog=el('dialog','mp-preview');dialog.setAttribute('aria-label','Просмотр изображения');const image=el('img');image.src=item.url;image.alt=item.alt||'';const close=button('×',()=>dialog.close(),'mp-preview-close');close.title='Закрыть';close.setAttribute('aria-label','Закрыть просмотр');dialog.append(close,image);dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();}
     }
     root.MultiPic={mountAll(){installFormHooks();document.querySelectorAll('[data-multipic-config]').forEach(node=>{if(node.dataset.mounted)return;node.dataset.mounted='1';try{new Editor(node,JSON.parse(node.dataset.multipicConfig));}catch(e){node.textContent='MultiPic: '+e.message;}});}};
     document.addEventListener('DOMContentLoaded',()=>root.MultiPic.mountAll());

@@ -20,7 +20,7 @@ page = get(manager_path + '?a=resource/update&id=' + sys.argv[2])
 matches = re.findall(r'data-multipic-config="([^"]+)"', page)
 assert matches, 'Gallery missing from real manager page: ' + '\n'.join(line for line in page.splitlines() if any(word in line.lower() for word in ['multipic', 'error', 'exception']))[:4000]
 cfg = json.loads(html.unescape(matches[0]))
-assert cfg['maxPixels'] == 32000000, cfg
+assert 'maxPixels' not in cfg, cfg
 assert cfg['maxBytes'] == 20971520, cfg
 assert 'uploadBytes' in cfg, cfg
 r = post(cfg['connector'], dict(action='heartbeat', token=cfg['token'], HTTP_MODAUTH=cfg['auth']))
@@ -61,14 +61,15 @@ r = post(closed_cfg['connector'], dict(action='heartbeat', token=closed_cfg['tok
 assert r['success'], r
 print('PASS: gallery capability persists when PHP session is closed before TV rendering')
 
-# Reject a too-large pixel header before GD allocation and return the requested plain message.
-large_png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 9000, 4000, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(b'\x00\xff\x00\x00')) + chunk(b'IEND', b'')
-req = urllib.request.Request(base + cfg['connector'], b''.join(parts).replace(png, large_png), {'Content-Type': 'multipart/form-data; boundary=' + boundary})
-try:
-    client.open(req)
-    raise AssertionError('Excessive pixel count accepted')
-except urllib.error.HTTPError as error:
-    result = json.loads(error.read())
-    assert result['code'] == 'multipic_pixels', result
-    assert result['message'] == 'Файл слишком большого размера. Выберите другой.', result
-print('PASS: friendly oversize message and custom manager URL')
+# Exercise the configured PHP upload size and the independent memory overflow guard.
+large_file = png + b'\x00' * (2*1024*1024)
+for payload, code in [(large_file, 'multipic_size'), (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 2000000000, 2000000000, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(b'\x00\xff\x00\x00')) + chunk(b'IEND', b''), 'multipic_memory')]:
+    req = urllib.request.Request(base + cfg['connector'], b''.join(parts).replace(png, payload), {'Content-Type': 'multipart/form-data; boundary=' + boundary})
+    try:
+        client.open(req)
+        raise AssertionError('Excessive size/memory accepted')
+    except urllib.error.HTTPError as error:
+        result = json.loads(error.read())
+        assert result['code'] == code, result
+        assert result['message'] == 'Файл слишком большого размера. Выберите другой.', result
+print('PASS: no pixel quota, friendly byte/memory limits and custom manager URL')

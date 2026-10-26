@@ -10,7 +10,7 @@ $properties=$r->getResponse();if(is_array($properties))$properties=json_encode($
 if(strpos((string)$properties,'inopt_folder')===false)throw new RuntimeException('TV properties renderer not found');
 if(strpos((string)$properties,'modx-combo-source')===false || strpos((string)$properties,'inopt_mediaSource')===false)throw new RuntimeException('Existing-source dropdown missing');
 $modx->lexicon->load('ru:multipic:default');
-foreach(['folder','max_files','max_edge','quality','max_bytes','max_pixels','chunks_path'] as $key) {
+foreach(['folder','max_files','max_edge','quality','max_bytes','chunks_path'] as $key) {
     if(!$modx->lexicon->exists('setting_multipic.'.$key,'ru') || !$modx->lexicon->exists('setting_multipic.'.$key.'_desc','ru'))throw new RuntimeException('Russian setting label or help missing: '.$key);
 }
 require_once MODX_CORE_PATH.'components/multipic/model/Service.php';

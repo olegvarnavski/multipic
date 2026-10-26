@@ -7,7 +7,7 @@ $modx=new modX();$modx->initialize('mgr');$modx->user=$modx->getObject('modUser'
 if(!$modx->user || !$modx->user->get('sudo'))throw new RuntimeException('CI admin not found');
 function expect($condition,$message){if(!$condition)throw new RuntimeException($message);echo 'PASS: '.$message.PHP_EOL;}
 function processor($action,$params=[]){global $modx;$r=$modx->runProcessor($action,$params);if($r->isError())throw new RuntimeException($action.': '.json_encode($r->getResponse()));return $r->getObject();}
-$package='multipic-0.1.6-alpha';
+$package='multipic-0.1.7-alpha';
 copy(__DIR__.'/../dist/'.$package.'.transport.zip',MODX_CORE_PATH.'packages/'.$package.'.transport.zip');
 processor('workspace/packages/scanlocal');processor('workspace/packages/install',['signature'=>$package]);
 expect((bool)$modx->getObject('modSnippet',['name'=>'MultiPic']),'transport install creates snippet');
@@ -16,12 +16,10 @@ $modx->cacheManager->refresh();$modx->setOption('multipic.folder','multipic/ci/'
 require_once MODX_CORE_PATH.'components/multipic/model/Service.php';
 $service=new MultiPic\Service($modx);
 $service->install();$service->install();
-expect((int)$modx->getObject('modSystemSetting','multipic.max_pixels')->get('value')===32000000,'former 24MP default upgraded to 32MP');
-$pixelSetting=$modx->getObject('modSystemSetting','multipic.max_pixels');$pixelSetting->set('value',31000000);$pixelSetting->save();
+expect(!$modx->getObject('modSystemSetting','multipic.max_pixels'),'obsolete pixel quota removed on upgrade');
 $object=$modx->newObject('modCategory');$options=[xPDOTransport::PACKAGE_ACTION=>xPDOTransport::ACTION_INSTALL];
 if(!(include __DIR__.'/../_build/resolver.php'))throw new RuntimeException('Repeat resolver failed');
-expect((int)$modx->getObject('modSystemSetting','multipic.max_pixels')->get('value')===31000000,'custom pixel limit preserved');
-$pixelSetting->set('value',32000000);$pixelSetting->save();$modx->setOption('multipic.max_pixels',32000000);
+expect(!$modx->getObject('modSystemSetting','multipic.max_pixels'),'pixel quota stays removed after repeated resolver');
 expect((int)$modx->getObject('modSystemSetting','multipic.quality')->get('value')===93,'upgrade preserves user setting');
 expect(strpos($modx->getObject('modChunk',['name'=>'multipicWrapper'])->getContent(),'upgrade-preserved')!==false,'upgrade preserves custom chunk');
 $oldResource=$modx->getObject('modResource',['pagetitle'=>'MultiPic upgrade preserved']);

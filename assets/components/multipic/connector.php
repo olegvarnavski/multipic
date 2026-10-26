@@ -48,6 +48,6 @@ try {
     if(isset($service))$service->log('connector',$context);
     else $modx->log(modX::LOG_LEVEL_ERROR,'[MultiPic connector] '.json_encode($context));
     http_response_code(400);
-    $message=in_array($e->getCode(),[1001,1002,1003],true)?'Файл слишком большого размера. Выберите другой.':($e instanceof RuntimeException?$e->getMessage():'Не удалось выполнить запрос. Проверьте журнал MODX.');
-    echo json_encode(['success'=>false,'message'=>$message,'code'=>$e->getCode()===1001?'multipic_memory':($e->getCode()===1002?'multipic_pixels':($e->getCode()===1003?'multipic_size':'multipic_request_failed')),'request'=>$requestId],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+    $message=in_array($e->getCode(),[1001,1003],true)?'Файл слишком большого размера. Выберите другой.':($e instanceof RuntimeException?$e->getMessage():'Не удалось выполнить запрос. Проверьте журнал MODX.');
+    echo json_encode(['success'=>false,'message'=>$message,'code'=>$e->getCode()===1001?'multipic_memory':($e->getCode()===1003?'multipic_size':'multipic_request_failed'),'request'=>$requestId],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
 }
