@@ -1,6 +1,7 @@
 <?php
 namespace MultiPic;
 require_once __DIR__ . '/Gallery.php';
+require_once __DIR__ . '/Compat.php';
 require_once __DIR__ . '/Paths.php';
 require_once __DIR__ . '/ImageMemory.php';
 require_once __DIR__ . '/Storage.php';
@@ -14,11 +15,6 @@ final class Service
     public function __construct($modx)
     {
         $this->modx = $modx;
-        if (class_exists('MODX\\Revolution\\modX')) {
-            foreach(['modX','modResource','modTemplateVar','modTemplateVarResource','modChunk'] as $alias) {
-                if(!class_exists($alias))class_alias('MODX\\Revolution\\'.$alias,$alias);
-            }
-        }
         // MODX 2 returns xPDOConnection here, not PDO. Use the xPDO transaction/prepare API.
         $this->db = $modx;
         $this->prefix = $modx->getOption('table_prefix') . 'multipic_';
@@ -36,13 +32,13 @@ final class Service
     public function log(string $action, array $context=[]): void
     {
         // Callers pass IDs and error classes only, never request bodies or auth tokens.
-        $this->modx->log(\modX::LOG_LEVEL_ERROR,'[MultiPic '.$action.'] '.json_encode($context,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->modx->log(1,'[MultiPic '.$action.'] '.json_encode($context,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
     }
     public function storageBases(): array
     {
         if($this->storageBases!==null)return $this->storageBases;
         $bases=[];
-        foreach($this->modx->getCollection('sources.modMediaSource') as $source) {
+        foreach($this->modx->getCollection(\MultiPic\Compat::name($this->modx,'sources.modMediaSource')) as $source) {
             if(stripos(get_class($source),'FileMediaSource')===false)continue;
             $source->initialize();$base=realpath($source->getBasePath());
             if($base)$bases[]=rtrim(str_replace('\\','/',$base),'/').'/';
@@ -217,7 +213,7 @@ final class Service
         $props = $tv->get('input_properties');
         if (is_string($props)) { $props = @unserialize($props, ['allowed_classes' => false]); }
         $props = is_array($props) ? $props : [];
-        $source = !empty($props['mediaSource']) ? $this->modx->getObject('sources.modMediaSource', (int)$props['mediaSource']) : $tv->getSource($context);
+        $source = !empty($props['mediaSource']) ? $this->modx->getObject(\MultiPic\Compat::name($this->modx,'sources.modMediaSource'), (int)$props['mediaSource']) : $tv->getSource($context);
         if (!$source) { throw new \RuntimeException('Не выбран медиаисточник TV'); }
         $source->initialize();
         $sourceProperties=$source->getPropertyList();
@@ -363,7 +359,7 @@ final class Service
     {
         $this->locked(function () use ($resource) {
             $refs=[];
-            $table=$this->modx->getTableName('modTemplateVarResource');
+            $table=$this->modx->getTableName(\MultiPic\Compat::name($this->modx,'modTemplateVarResource'));
             $q=$this->query("SELECT tmplvarid,value FROM {$table} WHERE contentid=?",[$resource]);
             foreach ($q->fetchAll(\PDO::FETCH_ASSOC) as $tv) {
                 foreach (Gallery::collect($tv['value']) as $g) {
@@ -393,7 +389,7 @@ final class Service
     }
     public function fingerprint(int $resource): string
     {
-        $table=$this->modx->getTableName('modTemplateVarResource');
+        $table=$this->modx->getTableName(\MultiPic\Compat::name($this->modx,'modTemplateVarResource'));
         $rows=$this->query("SELECT tmplvarid,value FROM {$table} WHERE contentid=? ORDER BY tmplvarid",[$resource])->fetchAll(\PDO::FETCH_ASSOC);
         return hash('sha256',json_encode($rows));
     }
@@ -421,9 +417,9 @@ final class Service
         foreach($post as $key=>$value) {
             if(!preg_match('/^tv[0-9]+$/D',(string)$key))continue;
             foreach(Gallery::collect($value) as $g) {
-                $tv=$this->modx->getObject('modTemplateVar',(int)($g['tv'] ?? 0));
+                $tv=$this->modx->getObject(\MultiPic\Compat::name($this->modx,'modTemplateVar'),(int)($g['tv'] ?? 0));
                 if(!$tv || $tv->get('type')!=='multipic' || !$tv->checkResourceGroupAccess()) { throw new \RuntimeException('Недоступное TV MultiPic'); }
-                $context=$resource ? $this->modx->getObject('modResource',$resource)->get('context_key') : ($post['context_key'] ?? 'web');
+                $context=$resource ? $this->modx->getObject(\MultiPic\Compat::name($this->modx,'modResource'),$resource)->get('context_key') : ($post['context_key'] ?? 'web');
                 $cfg=$this->config($tv,$context);
                 if(count($g['items'])>$cfg['max'])throw new \RuntimeException('Превышен максимум изображений MultiPic');
                 $seen=[];
@@ -485,7 +481,7 @@ final class Service
             if(!$candidates)return ['removed'=>0,'failed'=>$failed,'pending_removed'=>$pendingRemoved];
             // Conservative rescan is retained, but only candidate references are repaired.
             // No fetchAll of all TVs, no per-item registry lookup and no full DELETE refs.
-            $table=$this->modx->getTableName('modTemplateVarResource');
+            $table=$this->modx->getTableName(\MultiPic\Compat::name($this->modx,'modTemplateVarResource'));
             $q=$this->query("SELECT contentid,tmplvarid,value FROM {$table} WHERE value LIKE ?",['%multipic%']);
             $used=[];
             while($row=$q->fetch(\PDO::FETCH_ASSOC)) {

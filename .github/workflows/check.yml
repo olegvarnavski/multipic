@@ -1,4 +1,4 @@
-name: PHP 7.4 and MODX 2.x
+name: MODX 2 and 3 compatibility
 on:
   push:
     branches: [main]
@@ -36,6 +36,7 @@ jobs:
         run: |
           find core assets _build tests -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/database-api.php
+          php tests/compat.php
           php tests/paths.php
           php tests/gallery.php
           php tests/image.php
@@ -57,7 +58,7 @@ jobs:
           MULTIPIC_TEST_SITE: '1'
         run: |
           php _build/build.transport.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
-          cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.2.0-alpha.transport.zip dist/
+          cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.3.0-alpha.transport.zip dist/
           php tests/upgrade-seed.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
           php tests/integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
           php tests/render-integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
@@ -77,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: multipic-php74-modx-${{ matrix.modx }}
-          path: dist/multipic-0.2.0-alpha.transport.zip
+          path: dist/multipic-0.3.0-alpha.transport.zip
 
   php8-unit:
     runs-on: ubuntu-22.04
@@ -92,9 +93,71 @@ jobs:
         run: |
           find core assets _build tests -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/database-api.php
+          php tests/compat.php
           php tests/gallery.php
           php tests/paths.php
           php tests/image.php
           php tests/memory.php
           php -d memory_limit=192M tests/image-large.php
           php tests/snippet.php
+
+  modx3:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - modx: "3.0.6"
+            php: "7.4"
+          - modx: "3.2.4"
+            php: "8.2"
+    runs-on: ubuntu-22.04
+    services:
+      mysql:
+        image: mysql:5.7
+        env:
+          MYSQL_ROOT_PASSWORD: multipic-ci-only
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -pmultipic-ci-only"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: gd, exif, fileinfo, pdo_mysql, xml, simplexml, mbstring, zip, intl
+          coverage: none
+      - uses: actions/download-artifact@v4
+        with:
+          name: multipic-php74-modx-2.8.6
+          path: dist
+      - name: Prepare disposable MODX 3 with legacy aliases disabled
+        run: |
+          curl --fail --location --retry 3 https://modx.com/download/direct/modx-${{ matrix.modx }}-pl.zip -o /tmp/modx3.zip
+          unzip -q /tmp/modx3.zip -d /tmp/multipic-site
+          site=/tmp/multipic-site/modx-${{ matrix.modx }}-pl
+          php tests/prepare-site.php "$site"
+          php "$site/setup/index.php" --installmode=new
+          php tests/disable-aliases.php "$site/config.core.php"
+      - name: Install the same MODX 2 built package and exercise storage and TV
+        env:
+          MULTIPIC_TEST_SITE: '1'
+        run: |
+          site=/tmp/multipic-site/modx-${{ matrix.modx }}-pl
+          php tests/integration.php "$site/config.core.php"
+          php tests/render-integration.php "$site/config.core.php"
+          php "$site/core/components/multipic/cleanup.php" "$site/config.core.php" --check
+          php "$site/core/components/multipic/cli/storage.php" "$site/config.core.php" --plan
+      - name: Real HTTP manager, upload, save and private thumbnail on MODX 3
+        env:
+          MULTIPIC_TEST_SITE: '1'
+        run: |
+          site=/tmp/multipic-site/modx-${{ matrix.modx }}-pl
+          resource_id=$(php tests/http-fixture.php "$site/config.core.php")
+          cp tests/http-closed-session.php "$site/multipic-ci-closed.php"
+          php -d upload_max_filesize=1M -d post_max_size=8M -S 127.0.0.1:8085 -t "$site" >/tmp/multipic-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" || true; cat /tmp/multipic-http.log' EXIT
+          for attempt in $(seq 1 30); do curl -s http://127.0.0.1:8085/control-panel-ci/ >/dev/null && break; sleep 1; done
+          python3 tests/http-upload.py http://127.0.0.1:8085 "$resource_id" /control-panel-ci/

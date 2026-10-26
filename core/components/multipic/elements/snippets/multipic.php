@@ -1,10 +1,11 @@
 <?php
 require_once $modx->getOption('core_path').'components/multipic/model/Gallery.php';
+require_once $modx->getOption('core_path').'components/multipic/model/Compat.php';
 try {
     $value=$scriptProperties['value'] ?? null;
     if ($value === null) {
         $id=(int)($scriptProperties['resource'] ?? ($modx->resource ? $modx->resource->get('id') : 0));
-        $resource=$modx->getObject('modResource',$id);
+        $resource=$modx->getObject(\MultiPic\Compat::name($modx,'modResource'),$id);
         if (!$resource || !$resource->checkPolicy('view')) { return ''; }
         $value=$resource->getTVValue((string)($scriptProperties['tv'] ?? ''));
     }
@@ -18,7 +19,7 @@ try {
             $relative=trim(substr($tpl,6));
             $file=$base ? realpath($base.DIRECTORY_SEPARATOR.$relative) : false;
             if (!$file || strpos($file,$base.DIRECTORY_SEPARATOR)!==0 || !is_file($file)) { throw new RuntimeException('Шаблон @FILE вне разрешённой папки'); }
-            $chunk=$modx->newObject('modChunk');
+            $chunk=$modx->newObject(\MultiPic\Compat::name($modx,'modChunk'));
             $chunk->setContent(file_get_contents($file)); $chunk->setCacheable(false);
             return (string)$chunk->process($data);
         }
@@ -36,6 +37,6 @@ try {
     if (!empty($scriptProperties['toPlaceholder'])) { $modx->setPlaceholder($scriptProperties['toPlaceholder'],$output);return ''; }
     return $output;
 } catch (Throwable $e) {
-    $modx->log(modX::LOG_LEVEL_ERROR,'[MultiPic output] '.$e->getMessage());
+    $modx->log(1,'[MultiPic output] '.$e->getMessage());
     return ($scriptProperties['output'] ?? 'html') === 'array' ? [] : '';
 }

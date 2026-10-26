@@ -1,5 +1,6 @@
 <?php
 $base = $modx->getOption('core_path') . 'components/multipic/';
+require_once $base.'model/Compat.php';
 $event = $modx->event->name;
 $modx->lexicon->load('multipic:default');
 if (in_array($event, ['OnTVInputRenderList','OnTVInputPropertiesList'], true)) {
@@ -7,10 +8,10 @@ if (in_array($event, ['OnTVInputRenderList','OnTVInputPropertiesList'], true)) {
     return;
 }
 if($event==='OnDocFormPrerender') {
-    if($modx->getCount('modTemplateVar',['type'=>'multipic'])) {
+    if($modx->getCount(\MultiPic\Compat::name($modx,'modTemplateVar'),['type'=>'multipic'])) {
         $assets=$modx->getOption('assets_url').'components/multipic/';
-        $modx->regClientCSS($assets.'css/multipic.css?multipic=020');
-        $modx->regClientStartupScript($assets.'js/multipic.js?multipic=020');
+        $modx->regClientCSS($assets.'css/multipic.css?multipic=030');
+        $modx->regClientStartupScript($assets.'js/multipic.js?multipic=030');
     }
     return;
 }
@@ -48,17 +49,17 @@ try {
     } elseif ($event === 'OnResourceDelete') {
         // This event can also represent soft delete; verify the resource is really absent.
         $rid = isset($resource) ? (int)$resource->get('id') : (int)($id ?? 0);
-        if ($rid && !$modx->getObject('modResource',$rid)) { $service->deleteResource($rid); $service->cleanup(); }
+        if ($rid && !$modx->getObject(\MultiPic\Compat::name($modx,'modResource'),$rid)) { $service->deleteResource($rid); $service->cleanup(); }
     } elseif ($event === 'OnEmptyTrash') {
         // Reconcile only IDs that no longer exist, preserving resources still in trash.
-        $table=$modx->getTableName('modResource');
+        $table=$modx->getTableName(\MultiPic\Compat::name($modx,'modResource'));
         $p=$modx->getOption('table_prefix').'multipic_refs';
         $ids=$service->query("SELECT DISTINCT r.resource FROM {$p} r LEFT JOIN {$table} s ON s.id=r.resource WHERE s.id IS NULL")->fetchAll(PDO::FETCH_COLUMN);
         foreach($ids as $rid) { $service->deleteResource((int)$rid); }
         $service->cleanup();
     }
 } catch (Throwable $e) {
-    $modx->log(modX::LOG_LEVEL_ERROR,'[MultiPic] '.$e->getMessage());
+    $modx->log(1,'[MultiPic] '.$e->getMessage());
     if($event==='OnBeforeDocFormSave') { if(isset($service))$service->release(); $modx->event->output($e->getMessage()); }
     elseif($event==='OnDocFormSave' && isset($service))$service->release();
     // Do not run cleanup after an unsuccessful reconciliation.

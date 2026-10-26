@@ -36,7 +36,7 @@ final class Storage
         Paths::master($old,$this->s->storageBases());$new=$old;
         if((int)$old['layout']===1){
             $suffix='/files/'.substr($old['id'],0,2).'/'.substr($old['id'],2,2).'/'.basename($old['path']);$root=substr($old['path'],0,-strlen($suffix));$found=false;
-            foreach($this->modx->getCollection('sources.modMediaSource') as $source){
+            foreach($this->modx->getCollection(\MultiPic\Compat::name($this->modx,'sources.modMediaSource')) as $source){
                 if(stripos(get_class($source),'FileMediaSource')===false)continue;
                 $source->initialize();$base=realpath($source->getBasePath());if(!$base)continue;$base=rtrim(str_replace('\\','/',$base),'/').'/';
                 if(strpos($root.'/',$base)!==0)continue;$folder=Gallery::folder(substr($root.'/',strlen($base)));
@@ -78,7 +78,7 @@ final class Storage
     }
     private function rewrite(?int $resource=null,?array $only=null): void
     {
-        $table=$this->modx->getTableName('modTemplateVarResource');
+        $table=$this->modx->getTableName(\MultiPic\Compat::name($this->modx,'modTemplateVarResource'));
         $q=$this->s->query("SELECT contentid,tmplvarid,value FROM {$table} WHERE ".($resource!==null?'contentid=?':'value LIKE ?'),[$resource!==null?$resource:'%'.$only['id'].'%']);
         while($row=$q->fetch(\PDO::FETCH_ASSOC)){
             $value=Gallery::rewrite($row['value'],function($item)use($only){

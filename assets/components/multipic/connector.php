@@ -15,10 +15,10 @@ try {
     if (!$cap) { throw new RuntimeException('Сессия галереи истекла. Откройте ресурс заново.'); }
     if (!$modx->hasPermission('save_document')) { throw new RuntimeException('Нет права сохранения ресурса'); }
     if ($cap['resource']) {
-        $res=$modx->getObject('modResource',$cap['resource']);
+        $res=$modx->getObject(\MultiPic\Compat::name($modx,'modResource'),$cap['resource']);
         if (!$res || !$res->checkPolicy('save')) { throw new RuntimeException('Нет доступа к ресурсу'); }
     } elseif (!$modx->hasPermission('new_document')) { throw new RuntimeException('Нет права создания ресурса'); }
-    $tv=$modx->getObject('modTemplateVar',$cap['tv']);
+    $tv=$modx->getObject(\MultiPic\Compat::name($modx,'modTemplateVar'),$cap['tv']);
     if (!$tv || !$tv->checkPolicy('view')) { throw new RuntimeException('Нет доступа к TV'); }
     $cfg=$service->config($tv,$cap['context']);
     $service->touchEditor($token);
@@ -54,7 +54,7 @@ try {
     $requestId=bin2hex(random_bytes(6));
     $context=['request'=>$requestId,'action'=>is_string($_POST['action'] ?? null)?substr($_POST['action'],0,30):'invalid','user'=>(int)$modx->user->get('id'),'tv'=>(int)($cap['tv'] ?? 0),'resource'=>(int)($cap['resource'] ?? 0),'error'=>get_class($e),'reason'=>$e instanceof RuntimeException?$e->getMessage():'internal_error'];
     if(isset($service))$service->log('connector',$context);
-    else $modx->log(modX::LOG_LEVEL_ERROR,'[MultiPic connector] '.json_encode($context));
+    else $modx->log(1,'[MultiPic connector] '.json_encode($context));
     http_response_code(400);
     $message=in_array($e->getCode(),[1001,1003],true)?'Файл слишком большого размера. Выберите другой.':($e instanceof RuntimeException?$e->getMessage():'Не удалось выполнить запрос. Проверьте журнал MODX.');
     echo json_encode(['success'=>false,'message'=>$message,'code'=>$e->getCode()===1001?'multipic_memory':($e->getCode()===1003?'multipic_size':'multipic_request_failed'),'request'=>$requestId],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);

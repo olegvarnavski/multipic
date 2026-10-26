@@ -1,6 +1,6 @@
 {
   "name": "multipic-development-checks",
-  "version": "0.2.0-alpha",
+  "version": "0.3.0-alpha",
   "private": true,
   "description": "Development-only DOM checks; no npm dependencies are installed on the MODX site",
   "scripts": {

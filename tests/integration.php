@@ -2,33 +2,35 @@
 /** Destructive checks ONLY on a disposable CI site. */
 if(getenv('MULTIPIC_TEST_SITE')!=='1')throw new RuntimeException('Set MULTIPIC_TEST_SITE=1 only on a disposable site');
 require $argv[1];
-require_once MODX_CORE_PATH.'model/modx/modx.class.php';
-$modx=new modX();$modx->initialize('mgr');$modx->user=$modx->getObject('modUser',['username'=>'multipic-ci']);
+require_once __DIR__.'/../core/components/multipic/model/Compat.php';
+$modx=\MultiPic\Compat::boot(MODX_CORE_PATH);$modx->initialize('mgr');$modx->user=$modx->getObject(\MultiPic\Compat::name($modx,'modUser'),['username'=>'multipic-ci']);
 if(!$modx->user || !$modx->user->get('sudo'))throw new RuntimeException('CI admin not found');
 function expect($condition,$message){if(!$condition)throw new RuntimeException($message);echo 'PASS: '.$message.PHP_EOL;}
 function processor($action,$params=[]){global $modx;$r=$modx->runProcessor($action,$params);if($r->isError())throw new RuntimeException($action.': '.json_encode($r->getResponse()));return $r->getObject();}
-$package='multipic-0.2.0-alpha';
+$package='multipic-0.3.0-alpha';
 copy(__DIR__.'/../dist/'.$package.'.transport.zip',MODX_CORE_PATH.'packages/'.$package.'.transport.zip');
 processor('workspace/packages/scanlocal');processor('workspace/packages/install',['signature'=>$package]);
-expect((bool)$modx->getObject('modSnippet',['name'=>'MultiPic']),'transport install creates snippet');
-expect((bool)$modx->getObject('modChunk',['name'=>'multipicExampleFenom']),'examples installed as admin chunks');
+expect((bool)$modx->getObject(\MultiPic\Compat::name($modx,'modSnippet'),['name'=>'MultiPic']),'transport install creates snippet');
+expect((bool)$modx->getObject(\MultiPic\Compat::name($modx,'modChunk'),['name'=>'multipicExampleFenom']),'examples installed as admin chunks');
 $modx->cacheManager->refresh();$modx->setOption('multipic.folder','multipic/ci/');
 require_once MODX_CORE_PATH.'components/multipic/model/Service.php';
 $service=new MultiPic\Service($modx);
+if(\MultiPic\Compat::modern($modx))require __DIR__.'/modern-seed.php';
 $service->install();$service->install();
-expect(!$modx->getObject('modSystemSetting','multipic.max_pixels'),'obsolete pixel quota removed on upgrade');
-$object=$modx->newObject('modCategory');$options=[xPDOTransport::PACKAGE_ACTION=>xPDOTransport::ACTION_INSTALL];
+expect(!$modx->getObject(\MultiPic\Compat::name($modx,'modSystemSetting'),'multipic.max_pixels'),'obsolete pixel quota removed on upgrade');
+$transportClass=class_exists(\xPDO\Transport\xPDOTransport::class)?\xPDO\Transport\xPDOTransport::class:\xPDOTransport::class;
+$object=$modx->newObject(\MultiPic\Compat::name($modx,'modCategory'));$options=[$transportClass::PACKAGE_ACTION=>$transportClass::ACTION_INSTALL];
 if(!(include __DIR__.'/../_build/resolver.php'))throw new RuntimeException('Repeat resolver failed');
-expect(!$modx->getObject('modSystemSetting','multipic.max_pixels'),'pixel quota stays removed after repeated resolver');
-expect((int)$modx->getObject('modSystemSetting','multipic.quality')->get('value')===93,'upgrade preserves user setting');
-expect(strpos($modx->getObject('modChunk',['name'=>'multipicWrapper'])->getContent(),'upgrade-preserved')!==false,'upgrade preserves custom chunk');
-$oldResource=$modx->getObject('modResource',['pagetitle'=>'MultiPic upgrade preserved']);
+expect(!$modx->getObject(\MultiPic\Compat::name($modx,'modSystemSetting'),'multipic.max_pixels'),'pixel quota stays removed after repeated resolver');
+expect((int)$modx->getObject(\MultiPic\Compat::name($modx,'modSystemSetting'),'multipic.quality')->get('value')===93,'upgrade preserves user setting');
+expect(strpos($modx->getObject(\MultiPic\Compat::name($modx,'modChunk'),['name'=>'multipicWrapper'])->getContent(),'upgrade-preserved')!==false,'upgrade preserves custom chunk');
+$oldResource=$modx->getObject(\MultiPic\Compat::name($modx,'modResource'),['pagetitle'=>'MultiPic upgrade preserved']);
 $oldGallery=MultiPic\Gallery::decode($oldResource->getTVValue('multipicUpgradeGallery'));
 expect(is_file($service->file($oldGallery['items'][0]['file'])['path']),'upgrade preserves gallery JSON and physical file');
 expect($service->integrity()['issues']===[],'read-only integrity accepts existing storage');
 // Upgrade migration must update independent resource copies and serialized nested MIGX values.
 $legacyItem=$oldGallery['items'][0];$legacyPath=$service->file($legacyItem['file'])['path'];
-$nestedTv=$modx->newObject('modTemplateVar');$nestedTv->fromArray(['name'=>'multipicNestedMigration','type'=>'textarea']);expect($nestedTv->save(),'create nested migration fixture');
+$nestedTv=$modx->newObject(\MultiPic\Compat::name($modx,'modTemplateVar'));$nestedTv->fromArray(['name'=>'multipicNestedMigration','type'=>'textarea']);expect($nestedTv->save(),'create nested migration fixture');
 $nestedValue=json_encode([['title'=>'Месяц','children'=>json_encode([['gallery'=>json_encode($oldGallery)]])]]);
 $oldResource->setTVValue($nestedTv->get('name'),$nestedValue);$service->syncResource((int)$oldResource->get('id'));
 $oldCopy=processor('resource/duplicate',['id'=>$oldResource->get('id'),'name'=>'Legacy copy']);$service->syncResource((int)$oldCopy['id']);
@@ -41,18 +43,18 @@ expect($service->storage()->migrate()===1,'journal resumes interrupted migration
 $moved=$service->file($legacyItem['file']);
 expect((int)$moved['owner_resource']===(int)$oldResource->get('id') && strpos($moved['path'],'/'.$oldResource->get('id').'/')!==false,'legacy file assigned stable resource folder');
 expect(is_file($moved['path'])&&is_file($legacyPath),'migration keeps old URL during editor grace period');
-$table=$modx->getTableName('modTemplateVarResource');
+$table=$modx->getTableName(\MultiPic\Compat::name($modx,'modTemplateVarResource'));
 foreach([(int)$oldResource->get('id'),(int)$oldCopy['id']] as $rid){
  $value=$service->query("SELECT value FROM {$table} WHERE contentid=? AND tmplvarid=?",[$rid,$nestedTv->get('id')])->fetchColumn();
  $galleries=MultiPic\Gallery::collect($value);expect($galleries[0]['items'][0]['url']===$moved['url'],'migration rewrites nested serialized JSON and resource copies');
 }
 expect($service->storage()->matches($moved,$legacyItem),'open editor legacy URL accepted during grace period');
 expect($service->storage()->migrate()===0,'migration repeat is idempotent');
-$tv=$modx->newObject('modTemplateVar');$tv->fromArray(['name'=>'multipicCiGallery','caption'=>'CI','type'=>'multipic','input_properties'=>['maxFiles'=>4,'folder'=>'multipic/ci/']]);expect($tv->save(),'create TV');
-$template=$modx->getObject('modTemplate',[]);expect((bool)$template,'default template exists');
-$link=$modx->newObject('modTemplateVarTemplate');$link->fromArray(['tmplvarid'=>$tv->get('id'),'templateid'=>$template->get('id')],'',true,true);expect($link->save(),'assign TV to template');
-$source=$modx->newObject('sources.modMediaSourceElement');$source->fromArray(['source'=>1,'object'=>$tv->get('id'),'object_class'=>'modTemplateVar','context_key'=>'web'],'',true,true);expect($source->save(),'assign source to TV');
-$resource=$modx->newObject('modDocument');$resource->fromArray(['pagetitle'=>'MultiPic CI','template'=>$template->get('id'),'context_key'=>'web','published'=>1]);expect($resource->save(),'create resource');
+$tv=$modx->newObject(\MultiPic\Compat::name($modx,'modTemplateVar'));$tv->fromArray(['name'=>'multipicCiGallery','caption'=>'CI','type'=>'multipic','input_properties'=>['maxFiles'=>4,'folder'=>'multipic/ci/']]);expect($tv->save(),'create TV');
+$template=$modx->getObject(\MultiPic\Compat::name($modx,'modTemplate'),[]);expect((bool)$template,'default template exists');
+$link=$modx->newObject(\MultiPic\Compat::name($modx,'modTemplateVarTemplate'));$link->fromArray(['tmplvarid'=>$tv->get('id'),'templateid'=>$template->get('id')],'',true,true);expect($link->save(),'assign TV to template');
+$source=$modx->newObject(\MultiPic\Compat::name($modx,'sources.modMediaSourceElement'));$source->fromArray(['source'=>1,'object'=>$tv->get('id'),'object_class'=>\MultiPic\Compat::name($modx,'modTemplateVar'),'context_key'=>'web'],'',true,true);expect($source->save(),'assign source to TV');
+$resource=$modx->newObject(\MultiPic\Compat::name($modx,'modDocument'));$resource->fromArray(['pagetitle'=>'MultiPic CI','template'=>$template->get('id'),'context_key'=>'web','published'=>1]);expect($resource->save(),'create resource');
 $modx->resource=$resource;
 $cfg=$service->config($tv,'web');$token=$service->createEditor((int)$tv->get('id'),(int)$resource->get('id'),'web');
 expect((bool)$service->editor($token),'editor capability persisted independently of PHP session');
@@ -96,7 +98,7 @@ $path=$service->file($item['file'])['path'];
 $g['items']=[];$resource->setTVValue($tv->get('name'),json_encode($g));$service->syncResource((int)$resource->get('id'));
 $service->query('DELETE FROM '.$modx->getOption('table_prefix').'multipic_leases WHERE token=?',[$token]);
 $service->cleanup();expect(is_file($path),'copy retains shared physical file');
-$copyResource=$modx->getObject('modResource',$copyId);$copyResource->setTVValue($tv->get('name'),json_encode($g));$service->syncResource($copyId);$service->cleanup();
+$copyResource=$modx->getObject(\MultiPic\Compat::name($modx,'modResource'),$copyId);$copyResource->setTVValue($tv->get('name'),json_encode($g));$service->syncResource($copyId);$service->cleanup();
 expect(!is_file($path),'last reference removal deletes main file');
 $staleId=str_repeat('b',32);$part='bb/bb/stale-'.$staleId.'.png';
 $stalePath=$service->safeDirectory($cfg['base'],$cfg['folder'].'files/bb/bb/').'stale-'.$staleId.'.png';

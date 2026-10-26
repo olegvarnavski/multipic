@@ -1,9 +1,8 @@
 <?php
-if (!class_exists('modTemplateVarInputRender') && class_exists('MODX\\Revolution\\modTemplateVarInputRender')) {
-    class_alias('MODX\\Revolution\\modTemplateVarInputRender','modTemplateVarInputRender');
-}
+require_once dirname(__DIR__,3).'/model/Compat.php';
+if(!class_exists('MultiPicInputRenderBase',false))class_alias((class_exists('MODX\\Revolution\\modTemplateVarInputRender')?'MODX\\Revolution\\modTemplateVarInputRender':'modTemplateVarInputRender'),'MultiPicInputRenderBase');
 if (!class_exists('MultiPicInputRender')) {
-    class MultiPicInputRender extends modTemplateVarInputRender
+    class MultiPicInputRender extends MultiPicInputRenderBase
     {
         public function getTemplate() { return $this->modx->getOption('core_path').'components/multipic/elements/tv/input/tpl/multipic.tpl'; }
         public function process($value,array $params=[])
@@ -12,7 +11,7 @@ if (!class_exists('MultiPicInputRender')) {
             require_once $this->modx->getOption('core_path').'components/multipic/model/Service.php';
             try {
                 // MIGX can substitute the field ID: retrieve the original TV by name.
-                $root=!empty($params['inputTVid']) ? $this->modx->getObject('modTemplateVar',(int)$params['inputTVid']) : $this->modx->getObject('modTemplateVar',['name'=>$this->tv->get('name')]);
+                $root=!empty($params['inputTVid']) ? $this->modx->getObject(\MultiPic\Compat::name($this->modx,'modTemplateVar'),(int)$params['inputTVid']) : $this->modx->getObject(\MultiPic\Compat::name($this->modx,'modTemplateVar'),['name'=>$this->tv->get('name')]);
                 if (!$root) { throw new RuntimeException('Исходное TV MultiPic не найдено'); }
                 $resource=$this->modx->resource;
                 $rid=$resource ? (int)$resource->get('id') : 0;
@@ -38,8 +37,8 @@ if (!class_exists('MultiPicInputRender')) {
                     unset($item);
                 });
                 $asset=$this->modx->getOption('assets_url').'components/multipic/';
-                $this->modx->regClientCSS($asset.'css/multipic.css?multipic=020');
-                $this->modx->regClientStartupScript($asset.'js/multipic.js?multipic=020');
+                $this->modx->regClientCSS($asset.'css/multipic.css?multipic=030');
+                $this->modx->regClientStartupScript($asset.'js/multipic.js?multipic=030');
                 $id='multipic-'.bin2hex(random_bytes(8));
                 $uploadBytes=$cfg['max_bytes'];
                 foreach(['upload_max_filesize','post_max_size'] as $setting){
