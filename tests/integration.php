@@ -11,7 +11,8 @@ function coreClass($name){global $modx;if(!($modx instanceof \MODX\Revolution\mo
 function processor($action,$params=[]){global $modx;$r=$modx->runProcessor($action,$params);if($r->isError())throw new RuntimeException($action.': '.json_encode($r->getResponse()));return $r->getObject();}
 $package='multipic-0.3.0-alpha';
 copy(__DIR__.'/../dist/'.$package.'.transport.zip',MODX_CORE_PATH.'packages/'.$package.'.transport.zip');
-processor('workspace/packages/scanlocal');processor('workspace/packages/install',['signature'=>$package]);
+$scanAction=class_exists('MODX\\Revolution\\modX')?'workspace/packages/scanLocal':'workspace/packages/scanlocal';
+processor($scanAction);processor('workspace/packages/install',['signature'=>$package]);
 expect((bool)$modx->getObject(coreClass('modSnippet'),['name'=>'MultiPic']),'transport install creates snippet');
 expect((bool)$modx->getObject(coreClass('modChunk'),['name'=>'multipicExampleFenom']),'examples installed as admin chunks');
 $modx->cacheManager->refresh();$modx->setOption('multipic.folder','multipic/ci/');
