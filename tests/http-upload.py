@@ -14,7 +14,7 @@ def get(path):
 def post(path, fields):
     req = urllib.request.Request(base + path, urllib.parse.urlencode(fields).encode())
     return json.loads(response(req))
-r = post('/connectors/index.php', dict(action='security/login', username='multipic-ci', password='multipic-ci-only-admin', login_context='mgr'))
+r = post('/connectors/index.php?action=security/login', dict(username='multipic-ci', password='multipic-ci-only-admin', login_context='mgr'))
 assert r['success'], r
 page = get(manager_path + '?a=resource/update&id=' + sys.argv[2])
 matches = re.findall(r'data-multipic-config="([^"]+)"', page)
