@@ -18,8 +18,16 @@ try {
  $bad['path']=$base.'/linked/multipic/files/'.$suffix;$bad['thumb']=$base.'/linked/multipic/thumbs/'.$suffix;
  blocked($bad,[$base.'/']);unlink($base.'/linked/multipic');rmdir($base.'/linked');rmdir($target);
  if(!Paths::remove($row,[$base.'/']) || file_exists($row['path']))throw new RuntimeException('Owned deletion failed');
+ $cache=$base.'/private-cache/';$new=['id'=>$id,'layout'=>2,'owner_resource'=>123,'path'=>$base.'/multipic/123/image-'.$id.'.png','thumb'=>$cache.'thumbs/123/'.$id.'-240-v1.png'];
+ mkdir(dirname($new['path']),0755,true);mkdir(dirname($new['thumb']),0755,true);file_put_contents($new['path'],'main');file_put_contents($new['thumb'],'thumb');
+ Paths::pair($new,[$base.'/'],$cache);
+ $bad=$new;$bad['owner_resource']=124;try{Paths::pair($bad,[$base.'/'],$cache);throw new Exception('Wrong owner accepted');}catch(RuntimeException $e){}
+ $bad=$new;$bad['thumb']=$base.'/foreign.png';try{Paths::pair($bad,[$base.'/'],$cache);throw new Exception('Foreign cache accepted');}catch(RuntimeException $e){}
+ if(!Paths::remove($new,[$base.'/'],$cache)||file_exists($new['thumb']))throw new RuntimeException('Resource-owned deletion failed');
+ rmdir($cache.'thumbs');rmdir(rtrim($cache,'/'));
+ echo "PASS: resource folder, independent private cache and owner boundary\n";
  echo "PASS: owned path pair, source boundary, moved roots, symlinks and safe deletion\n";
 } finally {
- foreach(['files','thumbs'] as $type){$dir=$base.'/multipic/'.$type.'/aa/aa';foreach(glob($dir.'/*')?:[] as $f)unlink($f);rmdir($dir);rmdir(dirname($dir));rmdir(dirname(dirname($dir)));}
+ foreach(['files','thumbs'] as $type){$dir=$base.'/multipic/'.$type.'/aa/aa';foreach(glob($dir.'/*')?:[] as $f)unlink($f);if(is_dir($dir))rmdir($dir);if(is_dir(dirname($dir)))rmdir(dirname($dir));rmdir(dirname(dirname($dir)));}
  rmdir($base.'/multipic');rmdir($base);
 }

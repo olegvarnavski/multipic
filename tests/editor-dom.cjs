@@ -75,6 +75,16 @@ const tick=()=>new Promise(r=>setImmediate(r));
  document.querySelector('#editor .mp-pic img').click();
  const preview=document.querySelector('dialog.mp-preview');assert.ok(preview);
  const close=preview.querySelector('.mp-preview-close');assert.equal(close.textContent,'×');assert.equal(close.getAttribute('aria-label'),'Закрыть просмотр');close.click();assert.equal(document.querySelector('dialog.mp-preview'),null);
+ // New private thumbnail mode: authenticated POST, bounded concurrency and blob reuse.
+ const formNode=document.getElementById('modx-resource-form');const hidden=nativeCreate('input');hidden.id='tvprivate';hidden.name='tvprivate';hidden.type='hidden';formNode.append(hidden);
+ const privateNode=nativeCreate('div');privateNode.id='private';formNode.append(privateNode);configure('private','tvprivate');
+ const privateCfg=JSON.parse(privateNode.dataset.multipicConfig);privateCfg.privateThumbs=true;privateCfg.data.items=[result('private-a'),result('private-b'),result('private-c')];privateNode.dataset.multipicConfig=JSON.stringify(privateCfg);
+ const before=requests.length;window.MultiPic.mountAll();assert.equal(requests.length,before+2,'thumbnail queue must allow only two concurrent requests');
+ assert.equal(requests[before].form.get('action'),'thumbnail');assert.equal(requests[before].form.get('HTTP_MODAUTH'),'test');
+ requests[before].resolve({ok:true,blob:async()=>new Blob(['thumb'],{type:'image/png'})});await tick();assert.equal(requests.length,before+3);
+ requests[before+1].resolve({ok:true,blob:async()=>new Blob(['thumb'],{type:'image/png'})});requests[before+2].resolve({ok:true,blob:async()=>new Blob(['thumb'],{type:'image/png'})});await tick();
+ assert.equal(privateNode.querySelector('img').src,'blob:test');privateNode.querySelector('.mp-eye').click();assert.equal(requests.length,before+3,'rerender must reuse thumbnail blobs');
+ console.log('PASS: private thumbnails use authenticated POST, two-request queue and reusable blobs');
  console.log('PASS: preview close cross and dialog disposal');
  console.log('PASS: same-origin server fallback and refusal to fetch cross-origin source');
  console.log('PASS: memory error triggers one browser resize/upload retry without storing temporary blobs');

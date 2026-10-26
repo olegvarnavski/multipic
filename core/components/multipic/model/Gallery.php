@@ -71,6 +71,23 @@ final class Gallery
         foreach ($value as $child) { $out = array_merge($out, self::collect($child, $depth + 1)); }
         return $out;
     }
+    /** Preserve serialized MIGX strings while patching only MultiPic items. */
+    public static function rewrite($value,callable $patch,int $depth=0)
+    {
+        if($depth>32)throw new \RuntimeException('Слишком глубокая структура MIGX');
+        if(is_string($value)){
+            $trim=ltrim($value);if($trim===''||!in_array($trim[0],['{','['],true))return $value;
+            $decoded=json_decode($value,true,64);
+            if(json_last_error()!==JSON_ERROR_NONE){if(strpos($value,'multipic')!==false)throw new \RuntimeException('Повреждены данные MultiPic');return $value;}
+            $next=self::rewrite($decoded,$patch,$depth+1);
+            return $next===$decoded?$value:json_encode($next,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        }
+        if(!is_array($value))return $value;
+        if(($value['type'] ?? '')==='multipic'){
+            self::decode($value);foreach($value['items'] as &$item)$item=$patch($item);unset($item);return $value;
+        }
+        foreach($value as &$child)$child=self::rewrite($child,$patch,$depth+1);unset($child);return $value;
+    }
     public static function folder(string $folder): string
     {
         $folder = trim(str_replace('\\', '/', $folder), '/');

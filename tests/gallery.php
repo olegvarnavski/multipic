@@ -23,3 +23,9 @@ foreach(['[{"image":"old.jpg"}]','{"items":["old.jpg"]}','false','not-json'] as 
  try{Gallery::input($old);throw new RuntimeException('Legacy data silently erased');}catch(InvalidArgumentException $e){}catch(JsonException $e){}
 }
 echo "PASS: MIGX empty sentinels, quoted JSON and preservation of incompatible data\n";
+
+$patched=Gallery::rewrite($nested,function($item){$item['url']='/new/'.$item['file'].'.jpg';return $item;});
+check(is_string(json_decode($patched,true)[0]['corps']),'rewrite preserves serialized nested MIGX');
+check(Gallery::collect($patched)[0]['items'][0]['url']==='/new/a.jpg','rewrite reaches nested galleries');
+check(Gallery::rewrite($nested,function($item){return $item;})===$nested,'no-op rewrite preserves original JSON bytes');
+echo "PASS: nested MIGX migration preserves serialization and metadata\n";

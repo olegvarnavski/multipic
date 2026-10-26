@@ -7,7 +7,7 @@ $modx=new modX();$modx->initialize('mgr');$modx->user=$modx->getObject('modUser'
 if(!$modx->user || !$modx->user->get('sudo'))throw new RuntimeException('CI admin not found');
 function expect($condition,$message){if(!$condition)throw new RuntimeException($message);echo 'PASS: '.$message.PHP_EOL;}
 function processor($action,$params=[]){global $modx;$r=$modx->runProcessor($action,$params);if($r->isError())throw new RuntimeException($action.': '.json_encode($r->getResponse()));return $r->getObject();}
-$package='multipic-0.1.7-alpha';
+$package='multipic-0.2.0-alpha';
 copy(__DIR__.'/../dist/'.$package.'.transport.zip',MODX_CORE_PATH.'packages/'.$package.'.transport.zip');
 processor('workspace/packages/scanlocal');processor('workspace/packages/install',['signature'=>$package]);
 expect((bool)$modx->getObject('modSnippet',['name'=>'MultiPic']),'transport install creates snippet');
@@ -26,6 +26,28 @@ $oldResource=$modx->getObject('modResource',['pagetitle'=>'MultiPic upgrade pres
 $oldGallery=MultiPic\Gallery::decode($oldResource->getTVValue('multipicUpgradeGallery'));
 expect(is_file($service->file($oldGallery['items'][0]['file'])['path']),'upgrade preserves gallery JSON and physical file');
 expect($service->integrity()['issues']===[],'read-only integrity accepts existing storage');
+// Upgrade migration must update independent resource copies and serialized nested MIGX values.
+$legacyItem=$oldGallery['items'][0];$legacyPath=$service->file($legacyItem['file'])['path'];
+$nestedTv=$modx->newObject('modTemplateVar');$nestedTv->fromArray(['name'=>'multipicNestedMigration','type'=>'textarea']);expect($nestedTv->save(),'create nested migration fixture');
+$nestedValue=json_encode([['title'=>'Месяц','children'=>json_encode([['gallery'=>json_encode($oldGallery)]])]]);
+$oldResource->setTVValue($nestedTv->get('name'),$nestedValue);$service->syncResource((int)$oldResource->get('id'));
+$oldCopy=processor('resource/duplicate',['id'=>$oldResource->get('id'),'name'=>'Legacy copy']);$service->syncResource((int)$oldCopy['id']);
+expect(count($service->storage()->plan())===1,'migration plan sees legacy file once');
+$oldResource->setTVValue($nestedTv->get('name'),'{"type":"multipic","file":"'.$legacyItem['file'].'",broken');
+try{$service->storage()->migrate();throw new RuntimeException('Broken JSON migration accepted');}catch(RuntimeException $e){expect(strpos($e->getMessage(),'Повреждены')!==false,'migration rejects malformed nested JSON');}
+expect((int)$service->file($legacyItem['file'])['layout']===1,'failed migration rolls registry back');
+$oldResource->setTVValue($nestedTv->get('name'),$nestedValue);
+expect($service->storage()->migrate()===1,'journal resumes interrupted migration');
+$moved=$service->file($legacyItem['file']);
+expect((int)$moved['owner_resource']===(int)$oldResource->get('id') && strpos($moved['path'],'/'.$oldResource->get('id').'/')!==false,'legacy file assigned stable resource folder');
+expect(is_file($moved['path'])&&is_file($legacyPath),'migration keeps old URL during editor grace period');
+$table=$modx->getTableName('modTemplateVarResource');
+foreach([(int)$oldResource->get('id'),(int)$oldCopy['id']] as $rid){
+ $value=$service->query("SELECT value FROM {$table} WHERE contentid=? AND tmplvarid=?",[$rid,$nestedTv->get('id')])->fetchColumn();
+ $galleries=MultiPic\Gallery::collect($value);expect($galleries[0]['items'][0]['url']===$moved['url'],'migration rewrites nested serialized JSON and resource copies');
+}
+expect($service->storage()->matches($moved,$legacyItem),'open editor legacy URL accepted during grace period');
+expect($service->storage()->migrate()===0,'migration repeat is idempotent');
 $tv=$modx->newObject('modTemplateVar');$tv->fromArray(['name'=>'multipicCiGallery','caption'=>'CI','type'=>'multipic','input_properties'=>['maxFiles'=>4,'folder'=>'multipic/ci/']]);expect($tv->save(),'create TV');
 $template=$modx->getObject('modTemplate',[]);expect((bool)$template,'default template exists');
 $link=$modx->newObject('modTemplateVarTemplate');$link->fromArray(['tmplvarid'=>$tv->get('id'),'templateid'=>$template->get('id')],'',true,true);expect($link->save(),'assign TV to template');
@@ -55,6 +77,15 @@ try{$service->validatePosted(['tv'.$tv->get('id')=>json_encode($bad)],(int)$reso
 $bad=$g;$bad['items'][0]['width']=$item['width'].'" data-test="x';
 try{$service->validatePosted(['tv'.$tv->get('id')=>json_encode($bad)],(int)$resource->get('id'));throw new RuntimeException('forged width accepted');}catch(RuntimeException $e){expect(strpos($e->getMessage(),'служебные')!==false,'server rejects non-integer dimension injection');}
 $resource->setTVValue($tv->get('name'),json_encode($g));$service->syncResource((int)$resource->get('id'));
+$beforePromotion=$item;$service->storage()->promoteResource((int)$resource->get('id'));
+$file=$service->file($item['file']);$g=MultiPic\Gallery::decode($service->query("SELECT value FROM {$table} WHERE contentid=? AND tmplvarid=?",[$resource->get('id'),$tv->get('id')])->fetchColumn());$item=$g['items'][0];
+expect((int)$file['owner_resource']===(int)$resource->get('id')&&strpos($file['path'],'/'.$resource->get('id').'/')!==false,'unsaved resource staging promoted after first save');
+expect($service->storage()->matches($file,$beforePromotion),'staging URL remains acceptable for open editor');
+$thumb=$service->thumbnail($file);expect(is_file($thumb)&&getimagesize($thumb)[0]===200,'private thumbnail generated lazily');
+unlink($thumb);expect(is_file($service->thumbnail($file)),'deleted thumbnail regenerates');
+$otherCfg=$cfg;$otherCfg['folder']='multipic/other/';$reused=$service->import($file['path'],$otherCfg,$token,'test',(int)$resource->get('id'));
+expect($reused['file']===$file['id']&&$reused['id']!==$item['id'],'server selection reuses managed master with independent metadata');
+
 $nested=json_encode([['month'=>'October','corps'=>json_encode([['photos'=>json_encode($g)]])]]);
 expect(count(MultiPic\Gallery::collect($nested))===1,'nested MIGX JSON recognized');
 $html=$modx->runSnippet('MultiPic',['value'=>json_encode($g),'tpl'=>'multipicItem','tplWrapper'=>'multipicWrapper']);expect(strpos($html,$item['url'])!==false,'installed snippet/chunks render image');

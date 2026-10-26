@@ -38,15 +38,15 @@ if (!class_exists('MultiPicInputRender')) {
                     unset($item);
                 });
                 $asset=$this->modx->getOption('assets_url').'components/multipic/';
-                $this->modx->regClientCSS($asset.'css/multipic.css?multipic=017');
-                $this->modx->regClientStartupScript($asset.'js/multipic.js?multipic=017');
+                $this->modx->regClientCSS($asset.'css/multipic.css?multipic=020');
+                $this->modx->regClientStartupScript($asset.'js/multipic.js?multipic=020');
                 $id='multipic-'.bin2hex(random_bytes(8));
                 $uploadBytes=$cfg['max_bytes'];
                 foreach(['upload_max_filesize','post_max_size'] as $setting){
                     $bytes=\MultiPic\ImageMemory::limit((string)ini_get($setting));
                     if($bytes>0)$uploadBytes=min($uploadBytes,$setting==='post_max_size'?max(0,$bytes-65536):$bytes);
                 }
-                $json=json_encode(['id'=>$id,'field'=>'tv'.$this->tv->get('id'),'token'=>$token,'data'=>$data,'max'=>$cfg['max'],'edge'=>$cfg['edge'],'quality'=>$cfg['quality'],'maxBytes'=>$cfg['max_bytes'],'uploadBytes'=>$uploadBytes,'source'=>$cfg['source'],'sourceUrl'=>$cfg['base_url'],'connector'=>$asset.'connector.php','auth'=>$this->modx->user->getUserToken('mgr')],JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP|JSON_THROW_ON_ERROR);
+                $json=json_encode(['id'=>$id,'field'=>'tv'.$this->tv->get('id'),'token'=>$token,'data'=>$data,'privateThumbs'=>true,'max'=>$cfg['max'],'edge'=>$cfg['edge'],'quality'=>$cfg['quality'],'maxBytes'=>$cfg['max_bytes'],'uploadBytes'=>$uploadBytes,'source'=>$cfg['source'],'sourceUrl'=>$cfg['base_url'],'connector'=>$asset.'connector.php','auth'=>$this->modx->user->getUserToken('mgr')],JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP|JSON_THROW_ON_ERROR);
                 $this->setPlaceholder('multipic_id',$id);
                 $this->setPlaceholder('multipic_assets',$asset);
                 $this->setPlaceholder('multipic_config',$json);

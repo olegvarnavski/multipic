@@ -25,7 +25,15 @@ try {
     $action=$_POST['action'] ?? '';
     if ($action === 'heartbeat') {
         $service->query('UPDATE '.$modx->getOption('table_prefix').'multipic_leases SET touched=? WHERE token=?',[time(),$token]);
-        $result=[];
+        $result=['files'=>[]];
+        $ids=json_decode((string)($_POST['files'] ?? '[]'),true);
+        if(is_array($ids))foreach(array_slice($ids,0,500) as $id){if(!is_string($id)||!preg_match('/^[a-f0-9]{32}$/D',$id)||!$service->canUse($cap,$id))continue;$file=$service->file($id);if($file)$result['files'][$id]=['url'=>$file['url'],'thumb'=>$file['thumb_url'],'width'=>(int)$file['width'],'height'=>(int)$file['height']];}
+    } elseif ($action === 'thumbnail') {
+        $id=(string)($_POST['file'] ?? '');
+        if(!preg_match('/^[a-f0-9]{32}$/D',$id)||!$service->canUse($cap,$id))throw new RuntimeException('Нет доступа к изображению');
+        $file=$service->file($id);if(!$file)throw new RuntimeException('Файл не найден');
+        $path=$service->thumbnail($file);$info=getimagesize($path);
+        header('Content-Type: '.$info['mime']);header('X-Content-Type-Options: nosniff');readfile($path);exit;
     } elseif ($action === 'upload' || $action === 'import') {
         if(!$modx->hasPermission('file_upload'))throw new RuntimeException('Нет права загрузки файлов (file_upload)');
         $fallback=isset($res) ? (string)$res->get('pagetitle') : 'gallery';
@@ -33,12 +41,12 @@ try {
             $file=$_FILES['file'] ?? null;
             if($file && in_array($file['error'],[UPLOAD_ERR_INI_SIZE,UPLOAD_ERR_FORM_SIZE],true))throw new RuntimeException('Превышен размер загрузки PHP',1003);
             if (!$file || $file['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) { throw new RuntimeException('Файл не получен. Проверьте ограничения PHP.'); }
-            $result=$service->upload($file['tmp_name'],$file['name'],$cfg,$token,$fallback);
+            $result=$service->upload($file['tmp_name'],$file['name'],$cfg,$token,$fallback,(int)$cap['resource']);
         } else {
             $relative=(string)($_POST['path'] ?? '');
             $path=realpath($cfg['base'].ltrim($relative,'/'));
             if (!$path || strpos($path,$cfg['base']) !== 0 || !is_file($path)) { throw new RuntimeException('Файл вне разрешённого источника'); }
-            $result=$service->upload($path,basename($path),$cfg,$token,$fallback);
+            $result=$service->import($path,$cfg,$token,$fallback,(int)$cap['resource']);
         }
     } else { throw new RuntimeException('Неизвестная команда'); }
     echo json_encode(['success'=>true,'object'=>$result],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);

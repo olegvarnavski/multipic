@@ -68,14 +68,14 @@
     function button(label, callback, cls='') {const b=el('button',cls,label);b.type='button';b.addEventListener('click',callback);return b;}
     class Editor {
         constructor(node,cfg) {
-            this.node=node;this.cfg=cfg;this.items=cfg.data.items;this.selected=new Set();this.queue=[];this.running=0;this.editing=null;
+            this.node=node;this.cfg=cfg;this.items=cfg.data.items;this.selected=new Set();this.queue=[];this.running=0;this.editing=null;this.thumbs=new Map();this.thumbQueue=[];this.thumbRunning=0;this.disposed=false;
             this.field=node.previousElementSibling;
             if (!this.field || this.field.name!==cfg.field) this.field=document.getElementById(cfg.field);
             this.node.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();this.node.classList.add('mp-over');}});
             this.node.addEventListener('dragleave',()=>this.node.classList.remove('mp-over'));
             this.node.addEventListener('drop',e=>{if(e.dataTransfer.files.length){e.preventDefault();this.node.classList.remove('mp-over');this.addFiles([...e.dataTransfer.files]);}});
             this.render(); this.registerToken();
-            this.timer=setInterval(()=>{if(!document.contains(this.node)){clearInterval(this.timer);if(this.browser){if(this.browser.win&&this.browser.win.destroy)this.browser.win.destroy();if(this.browser.destroy)this.browser.destroy();this.browser=null;}instances.delete(this);tokens.delete(this.cfg.token);const f=document.querySelector('input[name="multipic_tokens"]');if(f)f.value=JSON.stringify([...tokens]);return;}this.request('heartbeat').then(()=>{if(this.sessionError){this.sessionError='';this.render();}}).catch(e=>{this.sessionError=e.message;this.render();});},60000);
+            this.timer=setInterval(()=>{if(!document.contains(this.node)){clearInterval(this.timer);this.disposed=true;for(const value of this.thumbs.values())if(value.url)URL.revokeObjectURL(value.url);if(this.browser){if(this.browser.win&&this.browser.win.destroy)this.browser.win.destroy();if(this.browser.destroy)this.browser.destroy();this.browser=null;}instances.delete(this);tokens.delete(this.cfg.token);const f=document.querySelector('input[name="multipic_tokens"]');if(f)f.value=JSON.stringify([...tokens]);return;}this.request('heartbeat',{files:JSON.stringify(this.items.map(x=>x.file).filter(Boolean))}).then(result=>{if(result.files){for(const item of this.items){const canonical=result.files[item.file];if(canonical)Object.assign(item,canonical);}this.cfg.data.items=this.items.filter(x=>!x._pending&&!x._error).map(({_file,_path,_url,_prepared,_pending,_error,_missing,_missingThumb,name,...x})=>x);this.field.value=JSON.stringify(this.cfg.data);}if(this.sessionError){this.sessionError='';this.render();}}).catch(e=>{this.sessionError=e.message;this.render();});},60000);
             instances.add(this);installFormHooks();
         }
         registerToken() {
@@ -92,6 +92,23 @@
             const r=await fetch(this.cfg.connector,{method:'POST',body:form,credentials:'same-origin'});
             let data;try{data=await r.json();}catch(e){throw Error('Сервер вернул некорректный ответ');}
             if(!r.ok||!data.success){const error=Error((data.message||'Ошибка запроса')+(data.request?' (код '+data.request+')':''));error.code=data.code;throw error;}return data.object;
+        }
+        thumbnail(image,item) {
+            let entry=this.thumbs.get(item.file);
+            if(!entry){
+                entry={images:[],url:null};this.thumbs.set(item.file,entry);
+                this.thumbQueue.push({item,entry});this.pumpThumbs();
+            }
+            if(entry.url)image.src=entry.url;else entry.images.push(image);
+        }
+        pumpThumbs() {
+            while(!this.disposed&&this.thumbRunning<2&&this.thumbQueue.length){
+                const {item,entry}=this.thumbQueue.shift();this.thumbRunning++;
+                const form=new FormData();Object.entries({action:'thumbnail',token:this.cfg.token,HTTP_MODAUTH:this.cfg.auth,file:item.file}).forEach(([k,v])=>form.append(k,v));
+                fetch(this.cfg.connector,{method:'POST',body:form,credentials:'same-origin'}).then(r=>{if(!r.ok)throw Error('thumbnail');return r.blob();}).then(blob=>{
+                    if(this.disposed)return;entry.url=URL.createObjectURL(blob);for(const image of entry.images)image.src=entry.url;entry.images=[];
+                }).catch(()=>{for(const image of entry.images)image.src=item.url;entry.images=[];this.thumbs.delete(item.file);}).finally(()=>{this.thumbRunning--;this.pumpThumbs();});
+            }
         }
         save() {
             this.cfg.data.items=this.items.filter(x=>!x._pending&&!x._error).map(({_file,_path,_url,_prepared,_pending,_error,_missing,_missingThumb,name,...x})=>x);
@@ -179,7 +196,7 @@
             this.items.forEach((item,index)=>{
                 const card=el('div','mp-card'+(!item.active?' mp-hidden':'')+(this.selected.has(item.id)?' mp-selected':''));card.dataset.id=item.id;
                 const pic=el('div','mp-pic');
-                if(!item._missing&&(item.thumb||item.url)){const image=el('img');image.src=item._missingThumb?item.url:(item.thumb||item.url);image.alt=item.alt||'';image.loading='lazy';image.addEventListener('click',()=>this.preview(item));pic.append(image);}
+                if(!item._missing&&(item.thumb||item.url)){const image=el('img');if(this.cfg.privateThumbs&&item.file)this.thumbnail(image,item);else image.src=item._missingThumb?item.url:(item.thumb||item.url);image.alt=item.alt||'';image.loading='lazy';image.addEventListener('click',()=>this.preview(item));pic.append(image);}
                 const check=el('input','mp-check');check.type='checkbox';check.checked=this.selected.has(item.id);check.setAttribute('aria-label','Выбрать изображение '+(index+1));check.addEventListener('change',()=>{check.checked?this.selected.add(item.id):this.selected.delete(item.id);this.render();});pic.append(check);
                 const eye=button(item.active?icons.eye:icons.hidden,()=>{item.active=!item.active;this.save();this.render();},'mp-eye');eye.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'+(item.active?'':'<path d="m3 3 18 18"/>')+'</svg>';eye.title=item.active?'Скрыть':'Показать';eye.setAttribute('aria-label',eye.title);pic.append(eye);
                 if(item===cover)pic.append(el('span','mp-cover','Обложка'));

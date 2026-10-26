@@ -3,6 +3,7 @@ namespace MultiPic;
 require_once __DIR__ . '/Gallery.php';
 require_once __DIR__ . '/Paths.php';
 require_once __DIR__ . '/ImageMemory.php';
+require_once __DIR__ . '/Storage.php';
 final class Service
 {
     private $modx;
@@ -82,6 +83,74 @@ final class Service
         $index=$this->query("SHOW INDEX FROM {$this->prefix}leases WHERE Key_name='touched_idx'")->fetchColumn();
         if(!$index)$this->query("ALTER TABLE {$this->prefix}leases ADD INDEX touched_idx(touched)");
         $this->query("INSERT IGNORE INTO {$this->prefix}schema(version) VALUES(1)");
+        $columns=[
+            'files'=>['source_id'=>'INT NOT NULL DEFAULT 0','storage_base'=>'TEXT NULL','storage_folder'=>'TEXT NULL','owner_resource'=>'INT NOT NULL DEFAULT 0','layout'=>'TINYINT NOT NULL DEFAULT 1'],
+            'pending'=>['owner_resource'=>'INT NOT NULL DEFAULT 0','layout'=>'TINYINT NOT NULL DEFAULT 1'],
+            'leases'=>['reused'=>'TINYINT NOT NULL DEFAULT 0']
+        ];
+        foreach($columns as $table=>$fields)foreach($fields as $column=>$definition){
+            if(!$this->query("SHOW COLUMNS FROM {$this->prefix}{$table} LIKE ?",[$column])->fetchColumn())$this->query("ALTER TABLE {$this->prefix}{$table} ADD COLUMN {$column} {$definition}");
+        }
+        $this->query("CREATE TABLE IF NOT EXISTS {$this->prefix}moves (
+            file CHAR(32) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+            old_row MEDIUMTEXT NOT NULL,new_row MEDIUMTEXT NOT NULL,
+            state VARCHAR(16) NOT NULL,created INT NOT NULL,KEY created_idx(created)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $this->query("INSERT IGNORE INTO {$this->prefix}schema(version) VALUES(2)");
+
+    }
+    public function storage(): Storage { return new Storage($this,$this->modx,$this->prefix); }
+    public function cacheRoot(): string
+    {
+        $base=realpath($this->modx->getOption('cache_path',null,$this->modx->getOption('core_path').'cache/'));
+        if(!$base)throw new \RuntimeException('Не найдена папка кеша MODX');
+        return rtrim(str_replace('\\','/',$base),'/').'/multipic/';
+    }
+    public function cachePath(array $file): string
+    {
+        return $this->cacheRoot().'thumbs/'.max(0,(int)($file['owner_resource'] ?? 0)).'/'.$file['id'].'-240-v1.'.pathinfo($file['path'],PATHINFO_EXTENSION);
+    }
+    public function canUse(array $cap,string $id): bool
+    {
+        return (bool)$this->query("SELECT 1 FROM {$this->prefix}leases WHERE token=? AND file=?",[$cap['token'],$id])->fetchColumn()
+            || (!empty($cap['resource']) && (bool)$this->query("SELECT 1 FROM {$this->prefix}refs WHERE resource=? AND file=? LIMIT 1",[(int)$cap['resource'],$id])->fetchColumn());
+    }
+    public function thumbnail(array $file): string
+    {
+        Paths::master($file,$this->storageBases());
+        $target=$this->cachePath($file);Paths::inside($target,$this->cacheRoot());
+        if(is_file($target))return $target;
+        $key='multipic-thumb-'.substr(hash('sha256',MODX_CORE_PATH.$file['id']),0,40);
+        if((int)$this->query('SELECT GET_LOCK(?,10)',[$key])->fetchColumn()!==1)throw new \RuntimeException('Миниатюра обрабатывается. Повторите запрос.');
+        $temp=null;$image=null;$thumb=null;
+        try{
+            if(is_file($target))return $target;
+            $info=@getimagesize($file['path']);$mime=$info['mime'] ?? '';
+            $types=['image/jpeg'=>['imagecreatefromjpeg','imagejpeg'],'image/png'=>['imagecreatefrompng','imagepng'],'image/webp'=>['imagecreatefromwebp','imagewebp']];
+            if(!$info||!isset($types[$mime]))throw new \RuntimeException('Не удалось прочитать основной файл');
+            $budget=ImageMemory::limit((string)ini_get('memory_limit'));if($budget<=0)$budget=268435456;
+            if(ImageMemory::estimate($info[0],$info[1],240,false)>$budget-memory_get_usage(true))throw new \RuntimeException('Недостаточно памяти для миниатюры',1001);
+            [$read,$write]=$types[$mime];$image=@$read($file['path']);if(!$image)throw new \RuntimeException('Не удалось прочитать основной файл');
+            $thumb=$this->resize($image,240);imagedestroy($image);$image=null;
+            $cacheBase=dirname(rtrim($this->cacheRoot(),'/')).'/';
+            $dir=$this->safeDirectory($cacheBase,'multipic/thumbs/'.max(0,(int)($file['owner_resource'] ?? 0)).'/');
+            $temp=tempnam($dir,'.thumb-');if(!$temp)throw new \RuntimeException('Не удалось создать миниатюру');
+            if(!$write($thumb,$temp,$mime==='image/png'?6:85)||!rename($temp,$target))throw new \RuntimeException('Не удалось записать миниатюру');
+            $temp=null;@chmod($target,0600);return $target;
+        }finally{
+            foreach([$image,$thumb] as $handle)if(is_resource($handle)||is_object($handle))imagedestroy($handle);
+            if($temp&&is_file($temp))@unlink($temp);
+            $this->query('SELECT RELEASE_LOCK(?)',[$key]);
+        }
+    }
+    public function import(string $input,array $cfg,string $token,string $fallback,int $resource=0): array
+    {
+        $existing=$this->locked(function() use ($input,$cfg,$token){
+            $known=$this->query("SELECT * FROM {$this->prefix}files WHERE path=? LIMIT 1",[$input])->fetch(\PDO::FETCH_ASSOC);
+            if($known){Paths::master($known,[$cfg['base']]);if(!is_file($input))throw new \RuntimeException('Файл отсутствует');$this->lease($token,$known['id'],true);return $this->item($known);}
+            return null;
+        });
+        return $existing ?? $this->upload($input,basename($input),$cfg,$token,$fallback,$resource);
     }
     // Separate rows avoid losing new gallery tokens when another manager request
     // writes an older PHP session snapshot, or an extension closes the session early.
@@ -135,9 +204,9 @@ final class Service
         $r = $this->query("SELECT * FROM {$this->prefix}files WHERE id=?", [$id])->fetch(\PDO::FETCH_ASSOC);
         return $r ?: null;
     }
-    public function lease(string $token, string $file): void
+    public function lease(string $token, string $file, bool $reused=false): void
     {
-        $this->query("INSERT INTO {$this->prefix}leases(token,file,touched) VALUES(?,?,?) ON DUPLICATE KEY UPDATE touched=VALUES(touched)", [$token, $file, time()]);
+        $this->query("INSERT INTO {$this->prefix}leases(token,file,touched,reused) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE touched=VALUES(touched),reused=GREATEST(reused,VALUES(reused))", [$token, $file, time(),(int)$reused]);
     }
     public function item(array $file): array
     {
@@ -179,7 +248,7 @@ final class Service
         if (!$real || strpos($real . DIRECTORY_SEPARATOR, $base) !== 0) { throw new \RuntimeException('Путь вне источника'); }
         return $real . DIRECTORY_SEPARATOR;
     }
-    public function upload(string $input, string $name, array $cfg, string $token, string $fallback): array
+    public function upload(string $input, string $name, array $cfg, string $token, string $fallback, int $resource=0): array
     {
         if (!extension_loaded('gd')) { throw new \RuntimeException('Нужна библиотека PHP GD'); }
         if (!is_file($input) || filesize($input) > $cfg['max_bytes']) { throw new \RuntimeException('Превышен размер файла',1003); }
@@ -203,7 +272,7 @@ final class Service
         $lookup=function() use ($bucket,$hash,$profile,$token) {
             $existing=$this->query("SELECT * FROM {$this->prefix}files WHERE bucket=? AND original_hash=? AND profile=?",[$bucket,$hash,$profile])->fetch(\PDO::FETCH_ASSOC);
             if(!$existing)return null;
-            if(!is_file($existing['path']) || !is_file($existing['thumb']))throw new \RuntimeException('Файл реестра отсутствует. Проверьте целостность хранилища.');
+            if(!is_file($existing['path']))throw new \RuntimeException('Файл реестра отсутствует. Проверьте целостность хранилища.');
             $this->lease($token,$existing['id']);return $this->item($existing);
         };
         $existing=$this->locked($lookup);
@@ -217,15 +286,15 @@ final class Service
         if($estimate>=PHP_INT_MAX-memory_get_usage(true))throw new \RuntimeException('Изображение требует слишком много памяти для обработки',1001);
         $needed=memory_get_usage(true)+$estimate;
         if($limit>0 && $needed>$limit)throw new \RuntimeException('Недостаточно памяти PHP для обработки. Лимит '.(int)ceil($limit/1048576).' МБ; требуется примерно '.(int)ceil($needed/1048576).' МБ. Загрузите изображение меньшего размера.',1001);
-        $id=bin2hex(random_bytes(16));$sub=substr($id,0,2).'/'.substr($id,2,2).'/';
+        $id=bin2hex(random_bytes(16));$resource=max(0,$resource);$sub=$resource>0?$resource.'/':'_incoming/';
         $filename=$this->slug($name,$fallback).'-'.$id.'.'.$ext;
-        $path=$this->safeDirectory($cfg['base'],$cfg['folder'].'files/'.$sub).$filename;
-        $thumbPath=$this->safeDirectory($cfg['base'],$cfg['folder'].'thumbs/'.$sub).$filename;
-        $intent=['id'=>$id,'path'=>$path,'thumb'=>$thumbPath];
-        $this->locked(function() use ($token,$cfg,$id,$path,$thumbPath) {
+        $path=$this->safeDirectory($cfg['base'],$cfg['folder'].$sub).$filename;
+        $thumbPath=$this->cachePath(['id'=>$id,'path'=>$path,'owner_resource'=>$resource]);
+        $intent=['id'=>$id,'path'=>$path,'thumb'=>$thumbPath,'layout'=>2,'owner_resource'=>$resource];
+        $this->locked(function() use ($token,$cfg,$id,$path,$thumbPath,$resource) {
             $count=(int)$this->query("SELECT COUNT(*) FROM {$this->prefix}leases WHERE token=?",[$token])->fetchColumn();
             if($count>=max(100,$cfg['max']*4))throw new \RuntimeException('Превышен лимит временных загрузок. Сохраните ресурс и откройте его заново.');
-            $this->query("INSERT INTO {$this->prefix}pending(id,token,path,thumb,created) VALUES(?,?,?,?,?)",[$id,$token,$path,$thumbPath,time()]);
+            $this->query("INSERT INTO {$this->prefix}pending(id,token,path,thumb,created,layout,owner_resource) VALUES(?,?,?,?,?,2,?)",[$id,$token,$path,$thumbPath,time(),$resource]);
         });
         $image=null;$main=null;$thumb=null;$registered=false;
         try {
@@ -239,14 +308,13 @@ final class Service
                 if($angle){$rotated=imagerotate($image,$angle,0);if(!$rotated)throw new \RuntimeException('Не удалось повернуть изображение');imagedestroy($image);$image=$rotated;unset($rotated);}
             }
             $main=$this->resize($image,$cfg['edge']);imagedestroy($image);$image=null;
-            $thumb=$this->resize($main,240);
-            foreach([[$main,$path],[$thumb,$thumbPath]] as $pair) {
+            foreach([[$main,$path]] as $pair) {
                 $quality=$ext==='png'?6:($pair[1]===$thumbPath?min(85,$cfg['quality']):$cfg['quality']);
                 if(!$write($pair[0],$pair[1],$quality))throw new \RuntimeException('Не удалось записать изображение');
                 chmod($pair[1],0644);
             }
             $row=['id'=>$id,'bucket'=>$bucket,'original_hash'=>$hash,'profile'=>$profile,'path'=>$path,'thumb'=>$thumbPath,
-                'url'=>$cfg['base_url'].$cfg['folder'].'files/'.$sub.$filename,'thumb_url'=>$cfg['base_url'].$cfg['folder'].'thumbs/'.$sub.$filename,
+                'url'=>$cfg['base_url'].$cfg['folder'].$sub.$filename,'thumb_url'=>'','source_id'=>$cfg['source'],'storage_base'=>$cfg['base'],'storage_folder'=>$cfg['folder'],'owner_resource'=>$resource,'layout'=>2,
                 'width'=>imagesx($main),'height'=>imagesy($main),'bytes'=>filesize($path),'created'=>time()];
             return $this->locked(function() use ($lookup,$row,$token,$id,&$registered) {
                 // Another request may have published identical bytes while GD was running.
@@ -266,7 +334,7 @@ final class Service
             if(!$registered) {
                 // A pending row survives hard process termination and is cleaned after 24h.
                 try {
-                    if(Paths::remove($intent,[$cfg['base']]))$this->query("DELETE FROM {$this->prefix}pending WHERE id=?",[$id]);
+                    if(Paths::remove($intent,[$cfg['base']],$this->cacheRoot()))$this->query("DELETE FROM {$this->prefix}pending WHERE id=?",[$id]);
                 }catch(\Throwable $e){$this->log('pending',['file'=>$id,'error'=>get_class($e),'reason'=>$e->getMessage()]);}
             }
         }
@@ -369,12 +437,12 @@ final class Service
                     $bucket=hash('sha256',$cfg['source'].':'.$cfg['base'].':'.$cfg['folder']);
                     // Existing references may belong to a previous folder configuration.
                     $already=$this->query("SELECT 1 FROM {$this->prefix}refs WHERE resource=? AND file=? LIMIT 1",[$resource,$id])->fetchColumn();
-                    $leased=false;
+                    $leased=false;$reused=false;
                     foreach($caps as $token=>$cap) {
-                        if((int)$cap['tv']===(int)$tv->get('id') && $this->query("SELECT 1 FROM {$this->prefix}leases WHERE token=? AND file=?",[$token,$id])->fetchColumn())$leased=true;
+                        if((int)$cap['tv']===(int)$tv->get('id') && $this->query("SELECT 1 FROM {$this->prefix}leases WHERE token=? AND file=?",[$token,$id])->fetchColumn()){$leased=true;$reused=$reused || (bool)$this->query("SELECT reused FROM {$this->prefix}leases WHERE token=? AND file=?",[$token,$id])->fetchColumn();}
                     }
-                    if(!$already && (!$leased || $file['bucket']!==$bucket))throw new \RuntimeException('Нет привязки к загруженному изображению');
-                    if(($item['thumb'] ?? '')!==$file['thumb_url'] || ($item['url'] ?? '')!==$file['url'] || !is_int($item['width'] ?? null) || $item['width']!==(int)$file['width'] || !is_int($item['height'] ?? null) || $item['height']!==(int)$file['height'])throw new \RuntimeException('Изменены служебные данные изображения');
+                    if(!$already && (!$leased || ($file['bucket']!==$bucket && !$reused)))throw new \RuntimeException('Нет привязки к загруженному изображению');
+                    if(!$this->storage()->matches($file,$item) || !is_int($item['width'] ?? null) || $item['width']!==(int)$file['width'] || !is_int($item['height'] ?? null) || $item['height']!==(int)$file['height'])throw new \RuntimeException('Изменены служебные данные изображения');
                     foreach(['title','alt'] as $text)if(!is_string($item[$text] ?? null)||strlen($item[$text])>4000)throw new \RuntimeException('Некорректная подпись изображения');
                 }
             }
@@ -389,8 +457,8 @@ final class Service
         while($row=$q->fetch(\PDO::FETCH_ASSOC)) {
             $checked++;$last=$row['id'];
             try {
-                $pair=Paths::pair($row,$bases);
-                foreach($pair as $i=>$path)if(!is_file($path))$issues[]=['file'=>$row['id'],'issue'=>$i?'missing_thumb':'missing_image'];
+                $pair=Paths::pair($row,$bases,$this->cacheRoot());
+                if(!is_file($pair[0]))$issues[]=['file'=>$row['id'],'issue'=>'missing_image'];
             }catch(\Throwable $e){$issues[]=['file'=>$row['id'],'issue'=>'unsafe_or_moved_storage'];}
         }
         return ['checked'=>$checked,'issues'=>$issues,'next_after'=>$checked===$limit?$last:null];
@@ -403,15 +471,16 @@ final class Service
             $this->query("DELETE FROM {$this->prefix}leases WHERE touched<?",[$cutoff]);
             $this->query("DELETE FROM {$this->prefix}editors WHERE touched<?",[$cutoff]);
             $bases=$this->storageBases();
+            $this->storage()->cleanAliases($limit);
             $q=$this->query("SELECT p.* FROM {$this->prefix}pending p LEFT JOIN {$this->prefix}editors e ON e.token=p.token WHERE p.created<? AND (e.token IS NULL OR e.touched<?) ORDER BY p.created LIMIT ".$limit,[$cutoff,$cutoff]);
             while($row=$q->fetch(\PDO::FETCH_ASSOC)) {
                 try {
-                    if($this->file($row['id']) || Paths::remove($row,$bases)) {
+                    if($this->file($row['id']) || Paths::remove($row,$bases,$this->cacheRoot())) {
                         $this->query("DELETE FROM {$this->prefix}pending WHERE id=?",[$row['id']]);$pendingRemoved++;
                     } else $failed++;
                 }catch(\Throwable $e){$failed++;$this->log('cleanup_pending',['file'=>$row['id'],'error'=>get_class($e),'reason'=>$e->getMessage()]);}
             }
-            $q=$this->query("SELECT f.* FROM {$this->prefix}files f WHERE NOT EXISTS (SELECT 1 FROM {$this->prefix}refs r WHERE r.file=f.id) AND NOT EXISTS (SELECT 1 FROM {$this->prefix}leases l WHERE l.file=f.id) ORDER BY f.id LIMIT ".$limit);
+            $q=$this->query("SELECT f.* FROM {$this->prefix}files f WHERE NOT EXISTS (SELECT 1 FROM {$this->prefix}refs r WHERE r.file=f.id) AND NOT EXISTS (SELECT 1 FROM {$this->prefix}leases l WHERE l.file=f.id) AND NOT EXISTS (SELECT 1 FROM {$this->prefix}moves m WHERE m.file=f.id AND m.state='planned') ORDER BY f.id LIMIT ".$limit);
             $candidates=[];while($row=$q->fetch(\PDO::FETCH_ASSOC))$candidates[$row['id']]=$row;
             if(!$candidates)return ['removed'=>0,'failed'=>$failed,'pending_removed'=>$pendingRemoved];
             // Conservative rescan is retained, but only candidate references are repaired.
@@ -430,7 +499,7 @@ final class Service
             foreach($candidates as $id=>$row) {
                 if(isset($used[$id]))continue;
                 try {
-                    if(Paths::remove($row,$bases)){$this->query("DELETE FROM {$this->prefix}files WHERE id=?",[$id]);$removed++;}
+                    if(Paths::remove($row,$bases,$this->cacheRoot())){$this->query("DELETE FROM {$this->prefix}files WHERE id=?",[$id]);$removed++;}
                     else $failed++;
                 }catch(\Throwable $e){$failed++;$this->log('cleanup_blocked',['file'=>$id,'error'=>get_class($e),'reason'=>$e->getMessage()]);}
             }

@@ -12,7 +12,7 @@ final class XpdoFixture {
  public function prepare($sql){$this->queries[]=$sql;return new StatementFixture();}
 }
 $modx=new XpdoFixture();$service=new MultiPic\Service($modx);$service->install();
-if(count($modx->queries)!==8)throw new RuntimeException('Schema not created through xPDO API');
+if(count(array_filter($modx->queries,function($sql){return strpos($sql,'CREATE TABLE')===0;}))!==7)throw new RuntimeException('Schema not created through xPDO API');
 if($service->locked(function()use($service){return $service->locked(function(){return 'ok';});})!=='ok')throw new RuntimeException('Nested lock failed');
 $locks=array_filter($modx->queries,function($sql){return strpos($sql,'GET_LOCK')!==false;});
 if(count($locks)!==1)throw new RuntimeException('Nested locks must be reentrant');

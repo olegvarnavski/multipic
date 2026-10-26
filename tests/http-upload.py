@@ -40,6 +40,18 @@ r = json.loads(response(req))
 assert r['success'] and r['object']['file'], r
 print('PASS: image uploads through authenticated HTTP connector')
 item = r['object']
+assert cfg['privateThumbs'] is True
+assert '/' + sys.argv[2] + '/' in item['url'], item
+thumb_fields = dict(action='thumbnail', token=cfg['token'], HTTP_MODAUTH=cfg['auth'], file=item['file'])
+thumbnail = response(urllib.request.Request(base + cfg['connector'], urllib.parse.urlencode(thumb_fields).encode()))
+assert thumbnail.startswith(b'\x89PNG'), thumbnail[:200]
+try:
+    client.open(urllib.request.Request(base + cfg['connector'], urllib.parse.urlencode(dict(thumb_fields, HTTP_MODAUTH='invalid')).encode()))
+    raise AssertionError('Unauthenticated thumbnail accepted')
+except urllib.error.HTTPError:
+    pass
+print('PASS: private thumbnail binary response requires manager authentication and file capability')
+
 record = json.loads(re.search(r',record:\s*(\{[^\n]+\})', page).group(1))
 fields = {key: (json.dumps(value) if isinstance(value, (dict, list)) else int(value) if isinstance(value, bool) else '' if value is None else value) for key, value in record.items()}
 gallery = cfg['data']

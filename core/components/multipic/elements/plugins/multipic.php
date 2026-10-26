@@ -9,8 +9,8 @@ if (in_array($event, ['OnTVInputRenderList','OnTVInputPropertiesList'], true)) {
 if($event==='OnDocFormPrerender') {
     if($modx->getCount('modTemplateVar',['type'=>'multipic'])) {
         $assets=$modx->getOption('assets_url').'components/multipic/';
-        $modx->regClientCSS($assets.'css/multipic.css?multipic=017');
-        $modx->regClientStartupScript($assets.'js/multipic.js?multipic=017');
+        $modx->regClientCSS($assets.'css/multipic.css?multipic=020');
+        $modx->regClientStartupScript($assets.'js/multipic.js?multipic=020');
     }
     return;
 }
@@ -26,6 +26,8 @@ try {
         $service->lockSave((int)$resource->get('id'));
         $service->validatePosted($_POST,(int)$resource->get('id'));
     } elseif ($event === 'OnDocFormSave') {
+        $service->syncResource((int)$resource->get('id'));
+        $service->storage()->promoteResource((int)$resource->get('id'));
         $service->syncResource((int)$resource->get('id'));
         // Only leases explicitly submitted by this resource editor can be released.
         $tokens = $service->tokens($_POST);
