@@ -52,9 +52,7 @@ except urllib.error.HTTPError:
     pass
 print('PASS: private thumbnail binary response requires manager authentication and file capability')
 
-record_match = re.search(r',\s*record\s*:\s*(\{[^\n]+\})', page)
-assert record_match, 'Resource record missing from manager page'
-record = json.loads(record_match.group(1))
+record = json.loads(get('/multipic-ci-record.php?id=' + sys.argv[2]))
 fields = {key: (json.dumps(value) if isinstance(value, (dict, list)) else int(value) if isinstance(value, bool) else '' if value is None else value) for key, value in record.items()}
 gallery = cfg['data']
 gallery['items'] = [item]
