@@ -7,7 +7,8 @@ $tv=$modx->getObject(coreClass('modTemplateVar'),['name'=>'multipicCiGallery']);
 $modx->resource=$modx->getObject(coreClass('modResource'),['pagetitle'=>'MultiPic CI']);
 function coreClass($name){global $modx;if(!($modx instanceof \MODX\Revolution\modX))return $name;if(strpos($name,'sources.')===0)return 'MODX\\Revolution\\Sources\\'.substr($name,8);return 'MODX\\Revolution\\'.$name;}
 if(!$tv || !$modx->resource)throw new RuntimeException('Missing integration fixtures');
-$r=$modx->runProcessor('element/tv/renders/getinputproperties',['type'=>'multipic','tv'=>$tv->get('id')]);
+$propertiesAction=class_exists('MODX\\Revolution\\modX')?'MODX\\Revolution\\Processors\\Element\\TemplateVar\\Renders\\GetInputProperties':'element/tv/renders/getinputproperties';
+$r=$modx->runProcessor($propertiesAction,['type'=>'multipic','tv'=>$tv->get('id')]);
 $properties=$r->getResponse();if(is_array($properties))$properties=json_encode($properties);
 if(strpos((string)$properties,'inopt_folder')===false)throw new RuntimeException('TV properties renderer not found');
 if(strpos((string)$properties,'modx-combo-source')===false || strpos((string)$properties,'inopt_mediaSource')===false)throw new RuntimeException('Existing-source dropdown missing');
