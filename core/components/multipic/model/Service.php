@@ -2,6 +2,7 @@
 namespace MultiPic;
 require_once __DIR__ . '/Gallery.php';
 require_once __DIR__ . '/Paths.php';
+require_once __DIR__ . '/ImageMemory.php';
 final class Service
 {
     private $modx;
@@ -192,17 +193,11 @@ final class Service
         if ($ext==='jpg' && !function_exists('exif_read_data')) { throw new \RuntimeException('Для JPEG требуется PHP EXIF'); }
         if (!function_exists($read) || !function_exists($write)) { throw new \RuntimeException('Формат не поддерживается библиотекой GD'); }
         $info = @getimagesize($input);
-        if (!$info || $info[0] * $info[1] > $cfg['max_pixels']) { throw new \RuntimeException('Изображение слишком большое по числу пикселей'); }
+        if (!$info || $info[0] * $info[1] > $cfg['max_pixels']) { throw new \RuntimeException('Изображение слишком большое по числу пикселей',1002); }
         // GD cannot preserve animation: reject rather than silently flatten it.
         $bytes = file_get_contents($input);
         if (($ext === 'png' && strpos($bytes, 'acTL') !== false) || ($ext === 'webp' && strpos($bytes, 'ANIM') !== false)) { throw new \RuntimeException('Анимация пока не поддерживается'); }
         unset($bytes);
-        $memory=ini_get('memory_limit');
-        if($memory!=='-1') {
-            $unit=strtolower(substr($memory,-1));$allowed=(int)$memory;
-            if($unit==='g')$allowed*=1073741824;elseif($unit==='m')$allowed*=1048576;elseif($unit==='k')$allowed*=1024;
-            if($allowed>0 && memory_get_usage(true)+$info[0]*$info[1]*18+8388608>$allowed)throw new \RuntimeException('Недостаточно памяти PHP для обработки. Загрузите изображение меньшего размера.');
-        }
         $hash = hash_file('sha256', $input);
         $bucket = hash('sha256', $cfg['source'] . ':' . $cfg['base'] . ':' . $cfg['folder']);
         $profile = hash('sha256', json_encode([$cfg['edge'], $cfg['quality'], 'gd-v1-exif-strip']));
@@ -214,6 +209,11 @@ final class Service
         };
         $existing=$this->locked($lookup);
         if($existing)return $existing;
+        $orientation=1;
+        if($ext==='jpg'){$exif=@exif_read_data($input);$orientation=(int)($exif['Orientation'] ?? 1);unset($exif);}
+        $limit=ImageMemory::limit((string)ini_get('memory_limit'));
+        $needed=memory_get_usage(true)+ImageMemory::estimate($info[0],$info[1],$cfg['edge'],in_array($orientation,[3,5,6,7,8],true));
+        if($limit>0 && $needed>$limit)throw new \RuntimeException('Недостаточно памяти PHP для обработки. Лимит '.(int)ceil($limit/1048576).' МБ; требуется примерно '.(int)ceil($needed/1048576).' МБ. Загрузите изображение меньшего размера.',1001);
         $id=bin2hex(random_bytes(16));$sub=substr($id,0,2).'/'.substr($id,2,2).'/';
         $filename=$this->slug($name,$fallback).'-'.$id.'.'.$ext;
         $path=$this->safeDirectory($cfg['base'],$cfg['folder'].'files/'.$sub).$filename;
@@ -230,12 +230,13 @@ final class Service
             $image=@$read($input);
             if(!$image)throw new \RuntimeException('Не удалось прочитать изображение');
             if($ext==='jpg') {
-                $exif=@exif_read_data($input);$o=(int)($exif['Orientation'] ?? 1);
+                $o=$orientation;
                 if(in_array($o,[2,4,5,7],true))imageflip($image,in_array($o,[2,5,7],true)?IMG_FLIP_HORIZONTAL:IMG_FLIP_VERTICAL);
                 $angle=[3=>180,5=>90,6=>-90,7=>-90,8=>90][$o] ?? 0;
-                if($angle){$rotated=imagerotate($image,$angle,0);if(!$rotated)throw new \RuntimeException('Не удалось повернуть изображение');imagedestroy($image);$image=$rotated;}
+                if($angle){$rotated=imagerotate($image,$angle,0);if(!$rotated)throw new \RuntimeException('Не удалось повернуть изображение');imagedestroy($image);$image=$rotated;unset($rotated);}
             }
-            $main=$this->resize($image,$cfg['edge']);$thumb=$this->resize($main,240);
+            $main=$this->resize($image,$cfg['edge']);imagedestroy($image);$image=null;
+            $thumb=$this->resize($main,240);
             foreach([[$main,$path],[$thumb,$thumbPath]] as $pair) {
                 $quality=$ext==='png'?6:($pair[1]===$thumbPath?min(85,$cfg['quality']):$cfg['quality']);
                 if(!$write($pair[0],$pair[1],$quality))throw new \RuntimeException('Не удалось записать изображение');

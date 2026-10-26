@@ -39,6 +39,8 @@ jobs:
           php tests/paths.php
           php tests/gallery.php
           php tests/image.php
+          php tests/memory.php
+          php -d memory_limit=192M tests/image-large.php
           php tests/snippet.php
           node --check assets/components/multipic/js/multipic.js
           npm ci --ignore-scripts
@@ -55,7 +57,7 @@ jobs:
           MULTIPIC_TEST_SITE: '1'
         run: |
           php _build/build.transport.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
-          cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.1.4-alpha.transport.zip dist/
+          cp /tmp/multipic-site/modx-${{ matrix.modx }}-pl/core/packages/multipic-0.1.5-alpha.transport.zip dist/
           php tests/upgrade-seed.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
           php tests/integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
           php tests/render-integration.php /tmp/multipic-site/modx-${{ matrix.modx }}-pl/config.core.php
@@ -75,7 +77,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: multipic-php74-modx-${{ matrix.modx }}
-          path: dist/multipic-0.1.4-alpha.transport.zip
+          path: dist/multipic-0.1.5-alpha.transport.zip
 
   php8-unit:
     runs-on: ubuntu-22.04
@@ -93,4 +95,6 @@ jobs:
           php tests/gallery.php
           php tests/paths.php
           php tests/image.php
+          php tests/memory.php
+          php -d memory_limit=192M tests/image-large.php
           php tests/snippet.php

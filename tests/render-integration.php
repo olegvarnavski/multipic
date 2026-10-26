@@ -29,6 +29,14 @@ $rootId=$tv->get('id');$tv->_fieldMeta['id']['phptype']='string';$tv->set('id','
 $html=$tv->getRender(['inputTVid'=>$rootId],'{"type":"multipic","version":1,"items":[]}',$tv->getRenderDirectories('OnTVInputRenderList','input'),'input',null,'multipic');
 if(strpos($html,'tvmigx_7_1')===false || strpos($html,'data-multipic-config')===false)throw new RuntimeException('MIGX synthetic TV ID rendering failed: '.$html);
 echo "PASS: MIGX inputTVid and synthetic field ID render through installed TV\n";
+foreach(['[]','{}','null','""','',json_encode('{"type":"multipic","version":1,"items":[]}')] as $emptyValue) {
+ $html=$tv->getRender(['inputTVid'=>$rootId],$emptyValue,$tv->getRenderDirectories('OnTVInputRenderList','input'),'input',null,'multipic');
+ if(strpos($html,'data-multipic-config')===false || strpos($html,'multipic-error')!==false)throw new RuntimeException('MIGX empty/quoted input renderer failed: '.$html);
+}
+$legacy='[{"image":"old.jpg"}]';$tv->set('value',$legacy);
+$html=$tv->getRender(['inputTVid'=>$rootId],$legacy,$tv->getRenderDirectories('OnTVInputRenderList','input'),'input',null,'multipic');
+if(strpos($html,'multipic-error')===false || strpos($html,'old.jpg')===false)throw new RuntimeException('Incompatible data was not preserved');
+echo "PASS: installed MIGX renderer accepts empty sentinels and quoted JSON; incompatible contents preserved\n";
 
 // Missing files must not disable the entire installed editor.
 $oldResource=$modx->getObject('modResource',['pagetitle'=>'MultiPic upgrade preserved']);

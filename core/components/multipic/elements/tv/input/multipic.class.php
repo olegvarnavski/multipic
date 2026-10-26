@@ -20,7 +20,7 @@ if (!class_exists('MultiPicInputRender')) {
                 $service=new \MultiPic\Service($this->modx);
                 $cfg=$service->config($root,$context);
                 $token=$service->createEditor((int)$root->get('id'),$rid,$context);
-                $data=$value ? \MultiPic\Gallery::decode($value) : ['type'=>'multipic','version'=>1,'gallery'=>bin2hex(random_bytes(16)),'items'=>[]];
+                $data=\MultiPic\Gallery::input($value);
                 $data['tv']=(int)$root->get('id');
                 $data['session']=$token;
                 // New editor instance: copies never share mutable gallery identifiers.
@@ -38,16 +38,17 @@ if (!class_exists('MultiPicInputRender')) {
                     unset($item);
                 });
                 $asset=$this->modx->getOption('assets_url').'components/multipic/';
-                $this->modx->regClientCSS($asset.'css/multipic.css?multipic=014');
-                $this->modx->regClientStartupScript($asset.'js/multipic.js?multipic=014');
+                $this->modx->regClientCSS($asset.'css/multipic.css?multipic=015');
+                $this->modx->regClientStartupScript($asset.'js/multipic.js?multipic=015');
                 $id='multipic-'.bin2hex(random_bytes(8));
-                $json=json_encode(['id'=>$id,'field'=>'tv'.$this->tv->get('id'),'token'=>$token,'data'=>$data,'max'=>$cfg['max'],'source'=>$cfg['source'],'connector'=>$asset.'connector.php','auth'=>$this->modx->user->getUserToken('mgr')],JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP|JSON_THROW_ON_ERROR);
+                $json=json_encode(['id'=>$id,'field'=>'tv'.$this->tv->get('id'),'token'=>$token,'data'=>$data,'max'=>$cfg['max'],'edge'=>$cfg['edge'],'quality'=>$cfg['quality'],'source'=>$cfg['source'],'connector'=>$asset.'connector.php','auth'=>$this->modx->user->getUserToken('mgr')],JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP|JSON_THROW_ON_ERROR);
                 $this->setPlaceholder('multipic_id',$id);
                 $this->setPlaceholder('multipic_assets',$asset);
                 $this->setPlaceholder('multipic_config',$json);
                 $this->setPlaceholder('multipic_value',json_encode($data,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
             } catch (Throwable $e) {
-                $this->setPlaceholder('multipic_error',$e->getMessage());
+                $message=$e instanceof InvalidArgumentException || $e instanceof JsonException ? 'В поле сохранены данные другого формата. Для MultiPic используйте новое поле MIGX или перенесите прежние данные. Содержимое сохранено без изменений.' : $e->getMessage();
+                $this->setPlaceholder('multipic_error',$message);
             }
         }
     }

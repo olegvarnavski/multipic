@@ -48,5 +48,5 @@ try {
     else $modx->log(modX::LOG_LEVEL_ERROR,'[MultiPic connector] '.json_encode($context));
     http_response_code(400);
     $message=$e instanceof RuntimeException?$e->getMessage():'Не удалось выполнить запрос. Проверьте журнал MODX.';
-    echo json_encode(['success'=>false,'message'=>$message,'code'=>'multipic_request_failed','request'=>$requestId],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+    echo json_encode(['success'=>false,'message'=>$message,'code'=>$e->getCode()===1001?'multipic_memory':($e->getCode()===1002?'multipic_pixels':'multipic_request_failed'),'request'=>$requestId],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
 }

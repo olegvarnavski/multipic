@@ -16,3 +16,10 @@ check(Gallery::folder('multipic//construction/')==='multipic/construction/','fol
 foreach(['../other','a/../b','/','a\\..\\b'] as $bad){try{Gallery::folder($bad);throw new RuntimeException('accepted unsafe folder');}catch(InvalidArgumentException $e){}}
 try{Gallery::collect('{"type":"multipic", broken');throw new RuntimeException('accepted malformed JSON');}catch(RuntimeException $e){check(strpos($e->getMessage(),'Повреждены')!==false,'damaged JSON prevents cleanup');}
 echo "PASS: filtering, nested MIGX, folder validation, malformed JSON\n";
+
+foreach(['',null,[], '[]','{}','null','""','   '] as $empty)check(Gallery::input($empty)['items']===[],'empty MIGX sentinel');
+check(Gallery::input(json_encode(json_encode($g)))['items']===$g['items'],'quoted gallery JSON retained');
+foreach(['[{"image":"old.jpg"}]','{"items":["old.jpg"]}','false','not-json'] as $old){
+ try{Gallery::input($old);throw new RuntimeException('Legacy data silently erased');}catch(InvalidArgumentException $e){}catch(JsonException $e){}
+}
+echo "PASS: MIGX empty sentinels, quoted JSON and preservation of incompatible data\n";

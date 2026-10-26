@@ -5,7 +5,29 @@
         const rows = items.filter(x=>x.active).map((x,i)=>({...x,idx:i+1})).filter(x=>parity==='all'||(parity==='odd'?x.idx%2:!(x.idx%2)));
         return rows.slice(offset,limit>0?offset+limit:undefined);
     }
-    if (typeof module !== 'undefined') module.exports={natural,select};
+    function fitImage(width,height,edge) {
+        const scale=edge>0?Math.min(1,edge/Math.max(width,height)):1;
+        return {width:Math.max(1,Math.round(width*scale)),height:Math.max(1,Math.round(height*scale))};
+    }
+    async function prepareImage(file,edge,quality,env=root) {
+        if(!(edge>0))return file;
+        const url=env.URL.createObjectURL(file);
+        try {
+            const img=new env.Image();
+            await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Браузер не смог прочитать изображение'));img.src=url;});
+            const size=fitImage(img.naturalWidth,img.naturalHeight,edge);
+            if(size.width===img.naturalWidth&&size.height===img.naturalHeight)return file;
+            const canvas=env.document.createElement('canvas');canvas.width=size.width;canvas.height=size.height;
+            try {
+                const ctx=canvas.getContext('2d');if(!ctx)throw Error('Обработка изображений в браузере недоступна');
+                ctx.drawImage(img,0,0,size.width,size.height);
+                const blob=await new Promise(resolve=>canvas.toBlob(resolve,file.type,quality/100));
+                if(!blob || blob.type!==file.type)throw Error('Браузер не поддерживает сохранение этого формата');
+                return new env.File([blob],file.name,{type:blob.type,lastModified:file.lastModified});
+            }finally{canvas.width=1;canvas.height=1;}
+        }finally{env.URL.revokeObjectURL(url);}
+    }
+    if (typeof module !== 'undefined') module.exports={natural,select,fitImage,prepareImage};
     if (!root.document || root.MultiPic) return;
     const instances=new Set();
     const icons={eye:'Показано',hidden:'Скрыто',edit:'✎',remove:'×',drag:'⠿'};
@@ -62,10 +84,10 @@
             const form=new FormData();Object.entries({action,token:this.cfg.token,HTTP_MODAUTH:this.cfg.auth,...extra}).forEach(([k,v])=>form.append(k,v));
             const r=await fetch(this.cfg.connector,{method:'POST',body:form,credentials:'same-origin'});
             let data;try{data=await r.json();}catch(e){throw Error('Сервер вернул некорректный ответ');}
-            if(!r.ok||!data.success)throw Error((data.message||'Ошибка запроса')+(data.request?' (код '+data.request+')':''));return data.object;
+            if(!r.ok||!data.success){const error=Error((data.message||'Ошибка запроса')+(data.request?' (код '+data.request+')':''));error.code=data.code;throw error;}return data.object;
         }
         save() {
-            this.cfg.data.items=this.items.filter(x=>!x._pending&&!x._error).map(({_file,_path,_pending,_error,_missing,_missingThumb,name,...x})=>x);
+            this.cfg.data.items=this.items.filter(x=>!x._pending&&!x._error).map(({_file,_path,_url,_prepared,_pending,_error,_missing,_missingThumb,name,...x})=>x);
             this.field.value=JSON.stringify(this.cfg.data);
             this.field.dispatchEvent(new Event('change',{bubbles:true}));
             installFormHooks();
@@ -91,10 +113,28 @@
         }
         async run(item) {
             try {
-                const uploaded=await this.request(item._path?'import':'upload',item._path?{path:item._path}:{file:item._file});
+                let uploaded;
+                try{uploaded=await this.request(item._prepared?'upload':(item._path?'import':'upload'),item._prepared?{file:item._prepared}:(item._path?{path:item._path}:{file:item._file}));}
+                catch(error){
+                    if(item._prepared || !['multipic_memory','multipic_pixels'].includes(error.code) || !(this.cfg.edge>0))throw error;
+                    let original=item._file;
+                    if(!original && item._url && root.location){
+                        const url=new URL(item._url,root.location.href);
+                        if(url.origin!==root.location.origin)throw error;
+                        const response=await fetch(url.href,{credentials:'same-origin'});if(!response.ok)throw error;
+                        const blob=await response.blob();original=new root.File([blob],item.name,{type:blob.type});
+                    }
+                    if(!original)throw error;
+                    const prepared=await prepareImage(original,this.cfg.edge,this.cfg.quality||95);
+                    if(prepared===original)throw error;
+                    if(!this.items.includes(item))return;
+                    item._prepared=prepared;
+                    this.notice='Большое изображение уменьшено в браузере до '+this.cfg.edge+' px. Исходный файл сохранён.';
+                    uploaded=await this.request('upload',{file:prepared});
+                }
                 if(!this.items.includes(item))return;
                 if(this.items.some(x=>x!==item&&x.file===uploaded.file)){this.items.splice(this.items.indexOf(item),1);this.notice='Уже добавлено: '+item.name;}
-                else {Object.assign(item,uploaded,{_pending:false,_error:null});delete item._file;delete item._path;}
+                else {Object.assign(item,uploaded,{_pending:false,_error:null});delete item._file;delete item._path;delete item._url;delete item._prepared;}
                 this.save();
             }catch(e){if(this.items.includes(item)){item._pending=false;item._error=e.message;}}
             finally{this.running--;this.render();this.pump();}
@@ -106,7 +146,7 @@
                     const view=browser.win&&browser.win.view;
                     const records=view&&view.getSelectedRecords?view.getSelectedRecords():[];
                     const files=records.length?records.map(r=>r.data):[data];
-                    for(const f of files)if(f&&!f.disabled)this.queue.push({_path:f.relativeUrl||f.url,name:f.name||f.relativeUrl||'image'});
+                    for(const f of files)if(f&&!f.disabled)this.queue.push({_path:f.relativeUrl||f.url,_url:f.url,name:f.name||f.relativeUrl||'image'});
                     this.pump();
                 },scope:this}}});
             const view=browser.win&&browser.win.view;

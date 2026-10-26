@@ -16,6 +16,18 @@ final class Gallery
         }
         return $value;
     }
+    /** Empty MIGX fields may be serialized as [], {}, null or a quoted empty string. */
+    public static function input($value): array
+    {
+        for($depth=0;$depth<3;$depth++) {
+            if($value===null || $value==='' || $value===[] || (is_string($value)&&trim($value)===''))return ['type'=>'multipic','version'=>1,'items'=>[]];
+            if(!is_string($value))return self::decode($value);
+            $next=json_decode($value,true,64,JSON_THROW_ON_ERROR);
+            if(!is_string($next))return ($next===null || $next===[])?['type'=>'multipic','version'=>1,'items'=>[]]:self::decode($next);
+            $value=$next;
+        }
+        throw new \InvalidArgumentException('Некорректный формат MultiPic');
+    }
     public static function select($value, string $parity = 'all', int $offset = 0, int $limit = 0): array
     {
         if (!in_array($parity, ['all', 'odd', 'even'], true)) {
