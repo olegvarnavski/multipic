@@ -2,7 +2,7 @@
 /** Destructive checks ONLY on a disposable CI site. */
 if(getenv('MULTIPIC_TEST_SITE')!=='1')throw new RuntimeException('Set MULTIPIC_TEST_SITE=1 only on a disposable site');
 require $argv[1];
-require_once MODX_CORE_PATH.'vendor/autoload.php';
+if(is_file(MODX_CORE_PATH.'vendor/autoload.php'))require_once MODX_CORE_PATH.'vendor/autoload.php';
 if(class_exists('MODX\\Revolution\\modX'))$modx=new \MODX\Revolution\modX();else{require_once MODX_CORE_PATH.'model/modx/modx.class.php';$modx=new modX();}
 $modx->initialize('mgr');$modx->user=$modx->getObject(coreClass('modUser'),['username'=>'multipic-ci']);
 if(!$modx->user || !$modx->user->get('sudo'))throw new RuntimeException('CI admin not found');
