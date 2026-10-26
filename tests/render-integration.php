@@ -1,9 +1,11 @@
 <?php
 if(getenv('MULTIPIC_TEST_SITE')!=='1')throw new RuntimeException('Disposable CI site required');
-require $argv[1];require_once __DIR__.'/../core/components/multipic/model/Compat.php';
-$modx=\MultiPic\Compat::boot(MODX_CORE_PATH);$modx->initialize('mgr');$modx->user=$modx->getObject(\MultiPic\Compat::name($modx,'modUser'),['username'=>'multipic-ci']);
-$tv=$modx->getObject(\MultiPic\Compat::name($modx,'modTemplateVar'),['name'=>'multipicCiGallery']);
-$modx->resource=$modx->getObject(\MultiPic\Compat::name($modx,'modResource'),['pagetitle'=>'MultiPic CI']);
+require $argv[1];require_once MODX_CORE_PATH.'vendor/autoload.php';
+if(class_exists('MODX\\Revolution\\modX'))$modx=new \MODX\Revolution\modX();else{require_once MODX_CORE_PATH.'model/modx/modx.class.php';$modx=new modX();}
+$modx->initialize('mgr');$modx->user=$modx->getObject(coreClass('modUser'),['username'=>'multipic-ci']);
+$tv=$modx->getObject(coreClass('modTemplateVar'),['name'=>'multipicCiGallery']);
+$modx->resource=$modx->getObject(coreClass('modResource'),['pagetitle'=>'MultiPic CI']);
+function coreClass($name){global $modx;if(!($modx instanceof \MODX\Revolution\modX))return $name;if(strpos($name,'sources.')===0)return 'MODX\\Revolution\\Sources\\'.substr($name,8);return 'MODX\\Revolution\\'.$name;}
 if(!$tv || !$modx->resource)throw new RuntimeException('Missing integration fixtures');
 $r=$modx->runProcessor('element/tv/renders/getinputproperties',['type'=>'multipic','tv'=>$tv->get('id')]);
 $properties=$r->getResponse();if(is_array($properties))$properties=json_encode($properties);
@@ -39,7 +41,7 @@ if(strpos($html,'multipic-error')===false || strpos($html,'old.jpg')===false)thr
 echo "PASS: installed MIGX renderer accepts empty sentinels and quoted JSON; incompatible contents preserved\n";
 
 // Missing files must not disable the entire installed editor.
-$oldResource=$modx->getObject(\MultiPic\Compat::name($modx,'modResource'),['pagetitle'=>'MultiPic upgrade preserved']);
+$oldResource=$modx->getObject(coreClass('modResource'),['pagetitle'=>'MultiPic upgrade preserved']);
 $old=MultiPic\Gallery::decode($oldResource->getTVValue('multipicUpgradeGallery'));
 $file=$service->file($old['items'][0]['file']);$backup=$file['path'].'.ci-backup';
 rename($file['path'],$backup);
